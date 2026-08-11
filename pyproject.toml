@@ -1,0 +1,26 @@
+[project]
+name = "hybrid-retrieval-router"
+version = "0.1.0"
+description = "Hybrid (BM25 + dense) retrieval with RRF fusion, cross-encoder reranking, and complexity-based query routing."
+requires-python = ">=3.11"
+dependencies = [
+    "qdrant-client",
+    "bm25s",
+    "sentence-transformers",
+    "groq",
+    "google-genai",
+    "tavily-python",
+    "fastapi",
+    "uvicorn",
+    "pydantic",
+    "pydantic-settings",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+]
+
+[tool.uv]
+package = false
