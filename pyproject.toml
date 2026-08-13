@@ -14,6 +14,8 @@ dependencies = [
     "uvicorn",
     "pydantic",
     "pydantic-settings",
+    "pypdf>=6.15.0",
+    "tiktoken>=0.13.0",
 ]
 
 [dependency-groups]
@@ -30,3 +32,4 @@ package = false
 markers = [
     "live_api: test makes a real call to Groq/Gemini/Tavily (skipped in CI, run locally with real keys only)",
 ]
+pythonpath = "."
