@@ -89,7 +89,8 @@ class Settings(BaseSettings):
 
     # ---- Retry/backoff (NFR-8, used by Step 11's resilience.py) ---------------
     max_retries: int = Field(default=2)
-
+    # ---- BM25 sparse index persistence (Step 8) ------------------------------
+    bm25_index_dir: str = Field(default="data/.bm25_index")
 
 # Module-level singleton - import this, don't re-instantiate Settings()
 # all over the codebase (keeps env parsing to one place).
