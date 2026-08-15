@@ -19,6 +19,11 @@ from pathlib import Path
 
 from src.ingestion.chunking import chunk_text
 from src.ingestion.loaders import load_document
+from qdrant_client.models import PointStruct, VectorParams, Distance
+
+from config.settings import settings
+from src.ingestion.embedder import embed_texts, get_embedding_config
+from src.common.qdrant_client import get_client
 
 # Default on-disk location for the persisted hash set. Tests override
 # this via the hash_store_path param (not by monkeypatching this
@@ -95,8 +100,10 @@ def process_document(
             continue  # FR-3: already ingested, skip - no duplicate emitted
 
         hash_store.add(content_hash)
+        chunk_id = int(content_hash[:16], 16) % (2**63 - 1)
         accepted.append({
             **c,
+            "chunk_id": chunk_id,
             "source_doc_id": source_doc_id,
             "chunk_index": chunk_index,
             "ingestion_timestamp": ingestion_timestamp,
@@ -105,3 +112,59 @@ def process_document(
 
     save_hash_store(hash_store, hash_store_path)
     return accepted
+
+
+def ensure_collection(client, collection_name: str, dimension: int):
+    existing = [c.name for c in client.get_collections().collections]
+    if collection_name not in existing:
+        client.create_collection(
+            collection_name=collection_name,
+            vectors_config=VectorParams(size=dimension, distance=Distance.COSINE),
+        )
+
+
+def embed_and_upsert(deduped_chunks: list[dict], trace_id: str = "ingest") -> int:
+    """
+    deduped_chunks: output of Step 6 — each dict has 'text', 'chunk_id' (int,
+    per your 88.txt-style naming), 'source_doc_id', 'chunk_index',
+    'char_offset_range', 'ingestion_timestamp'.
+    Returns number of points upserted.
+    """
+    client = get_client()
+    ensure_collection(client, settings.qdrant_collection, settings.gemini_embedding_dimension)
+
+    texts = [c["text"] for c in deduped_chunks]
+    vectors = embed_texts(texts, task_type="document", trace_id=trace_id)
+    embed_config = get_embedding_config()
+
+    points = [
+        PointStruct(
+            id=chunk["chunk_id"],  # int chunk_id, already Qdrant-compatible
+            vector=vector,
+            payload={**chunk, "embedding_config": embed_config},
+        )
+        for chunk, vector in zip(deduped_chunks, vectors)
+    ]
+
+    client.upsert(collection_name=settings.qdrant_collection, points=points)
+    return len(points)
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Run ingestion pipeline: load, chunk, dedup, embed, upsert."
+    )
+    parser.add_argument("--path", required=True, help="Path to source document (PDF/TXT/MD)")
+    args = parser.parse_args()
+
+    print(f"[pipeline] Processing {args.path} ...")
+    new_chunks = process_document(args.path)
+    print(f"[pipeline] {len(new_chunks)} new chunks after dedup (0 means already ingested).")
+
+    if new_chunks:
+        upserted_count = embed_and_upsert(new_chunks)
+        print(f"[pipeline] Upserted {upserted_count} points into Qdrant collection '{settings.qdrant_collection}'.")
+    else:
+        print("[pipeline] Nothing new to embed/upsert — skipping Qdrant write.")
