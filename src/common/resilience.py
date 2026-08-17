@@ -6,7 +6,8 @@ from __future__ import annotations
 
 import asyncio
 import random
-from typing import Awaitable, Callable, TypeVar
+from collections.abc import Awaitable, Callable
+from typing import TypeVar
 
 from config.settings import settings
 
@@ -23,10 +24,7 @@ def _default_is_retryable(exc: Exception) -> bool:
     status = getattr(exc, "status_code", None) or getattr(exc, "status", None)
     if status in RETRYABLE_STATUS_CODES:
         return True
-    if isinstance(exc, (asyncio.TimeoutError, TimeoutError, ConnectionError)):
-        return True
-    return False
-
+    return isinstance(exc, (asyncio.TimeoutError, TimeoutError, ConnectionError))
 
 async def with_retry(
     fn: Callable[[], Awaitable[T]],
@@ -46,7 +44,7 @@ async def with_retry(
     for attempt in range(max_retries + 1):
         try:
             return await fn()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             last_exc = exc
             if attempt == max_retries or not check(exc):
                 break
