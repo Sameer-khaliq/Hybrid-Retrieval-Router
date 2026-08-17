@@ -7,10 +7,10 @@ from __future__ import annotations
 import asyncio
 
 from config.settings import settings
-from src.common.resilience import with_retry, RetriesExhaustedError
+from src.common.resilience import RetriesExhaustedError, with_retry
 from src.ingestion.embedder import embed_texts
-from src.retrieval.sparse_bm25 import query_bm25
 from src.observability.logging_setup import get_logger
+from src.retrieval.sparse_bm25 import query_bm25
 
 
 async def embed_query_with_fallback(query: str, trace_id: str = "embed_fallback") -> dict:
