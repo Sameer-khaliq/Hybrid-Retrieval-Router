@@ -130,4 +130,4 @@ class Settings(BaseSettings):
 
 # Module-level singleton - import this, don't re-instantiate Settings()
 # all over the codebase (keeps env parsing to one place).
-settings = Settings()
+settings = Settings() 
