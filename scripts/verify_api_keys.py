@@ -51,7 +51,7 @@ def check_groq() -> bool:
         text = resp.choices[0].message.content
         print(f"  [OK]   API call succeeded, model replied: {text!r}")
         return True
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"  [FAIL] API call failed: {e}")
         return False
 
@@ -70,7 +70,7 @@ def check_gemini() -> bool:
         dim = len(resp.embeddings[0].values)
         print(f"  [OK]   API call succeeded, embedding dimension returned: {dim}")
         return True
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"  [FAIL] API call failed: {e}")
         return False
 
@@ -86,7 +86,7 @@ def check_tavily() -> bool:
         n = len(resp.get("results", []))
         print(f"  [OK]   API call succeeded, {n} result(s) returned")
         return True
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"  [FAIL] API call failed: {e}")
         return False
 
