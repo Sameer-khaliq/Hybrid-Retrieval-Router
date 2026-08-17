@@ -34,8 +34,8 @@ RPM/TPM ceiling on that model - worth watching once load-testing
 against NFR-3, not a Phase 4 blocker.
 """
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -77,6 +77,13 @@ class Settings(BaseSettings):
 
     # ---- Cross-encoder reranker model (FR-10, Step 18) ---------------------
     reranker_model: str = Field(default="cross-encoder/ms-marco-MiniLM-L-6-v2")
+
+    # ---- Fast-path rerank behavior (FR-6, Step 19) --------------------------
+    # "skip"    -> fast-path never calls the reranker, just returns
+    #              top rerank_top_k_fast fused-order candidates
+    # "reduced" -> fast-path still reranks, but only over rerank_top_k_fast
+    #              candidates instead of rerank_top_k
+    rerank_fast_path_mode: str = Field(default="skip")
 
     # ---- Routing thresholds (FR-12) ----------------------------------------
     tau_low: float = Field(default=0.3)
@@ -130,4 +137,4 @@ class Settings(BaseSettings):
 
 # Module-level singleton - import this, don't re-instantiate Settings()
 # all over the codebase (keeps env parsing to one place).
-settings = Settings() 
+settings = Settings()
