@@ -14,16 +14,16 @@ the second time - nothing downstream ever receives a duplicate.
 
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
-from src.ingestion.chunking import chunk_text
-from src.ingestion.loaders import load_document
-from qdrant_client.models import PointStruct, VectorParams, Distance
+from qdrant_client.models import Distance, PointStruct, VectorParams
 
 from config.settings import settings
-from src.ingestion.embedder import embed_texts, get_embedding_config
 from src.common.qdrant_client import get_client
+from src.ingestion.chunking import chunk_text
+from src.ingestion.embedder import embed_texts, get_embedding_config
+from src.ingestion.loaders import load_document
 
 # Default on-disk location for the persisted hash set. Tests override
 # this via the hash_store_path param (not by monkeypatching this
@@ -89,7 +89,7 @@ def process_document(
     )
 
     source_doc_id = Path(path).stem
-    ingestion_timestamp = datetime.now(timezone.utc).isoformat()
+    ingestion_timestamp = datetime.now(UTC).isoformat()
 
     hash_store = load_hash_store(hash_store_path)
     accepted: list[dict] = []
