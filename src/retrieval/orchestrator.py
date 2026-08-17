@@ -15,10 +15,10 @@ from __future__ import annotations
 import asyncio
 
 from config.settings import settings
-from src.retrieval.sparse_bm25 import query_bm25
-from src.retrieval.fallback import embed_query_with_fallback
 from src.common.qdrant_client import get_client
 from src.observability.logging_setup import get_logger
+from src.retrieval.fallback import embed_query_with_fallback
+from src.retrieval.sparse_bm25 import query_bm25
 from src.routing.layer0_rules import route_query  # Step 17 addition
 
 
