@@ -26,7 +26,6 @@ exclusive in practice but this order is deliberate, not incidental.
 from __future__ import annotations
 
 import re
-from typing import Optional
 
 from src.observability.logging_setup import get_logger
 
@@ -62,7 +61,7 @@ NON_CORPUS_INTENT_RESPONSE = (
 )
 
 
-def check_non_corpus_intent(query: str) -> Optional[dict]:
+def check_non_corpus_intent(query: str) -> dict | None:
     q = query.strip()
     if (
         _GREETING_RE.match(q)
@@ -91,10 +90,12 @@ _ABUSE_TERMS = [
     r"\bfuck(ing|er)?\b", r"\bshit\b", r"\bbitch\b", r"\basshole\b",
     r"\bidiot\b", r"\bstupid\s+(bot|ai|system)\b", r"\bmoron\b",
     r"\bkill\s+yourself\b", r"\bi\s+will\s+(kill|hurt|destroy)\s+you\b",
-    r"\b(you|this\s+bot|this\s+ai|this\s+system|the\s+bot|the\s+ai)\s+(is|are)\s+"
-    r"(useless|garbage|trash|worthless|stupid|dumb|pathetic)\b",
+    (
+        r"\b(you|this\s+bot|this\s+ai|this\s+system|the\s+bot|the\s+ai)\s+(is|are)\s+"
+        r"(useless|garbage|trash|worthless|stupid|dumb|pathetic)\b"
+    ),
 
-    r"\b(bc|mc|bsdk|bkl)\b",                      
+    r"\b(bc|mc|bsdk|bkl)\b",                    
     r"\b(bhenchod|behenchod|bhen\s*chod)\b",
     r"\b(madarchod|chadarmod|madar\s*chod|mc)\b",
     r"\b(bhosdike|bhosdi\s*ke|bhosadi\s*ke)\b",
@@ -122,7 +123,7 @@ ABUSE_RESPONSE = (
 )
 
 
-def check_abusive_language(query: str) -> Optional[dict]:
+def check_abusive_language(query: str) -> dict | None:
     if _ABUSE_RE.search(query):
         return {
             "gated": True,
@@ -172,7 +173,7 @@ CREDENTIAL_SOLICITATION_RESPONSE = (
 )
 
 
-def check_credential_solicitation(query: str) -> Optional[dict]:
+def check_credential_solicitation(query: str) -> dict | None:
     if _DISCLOSURE_REQUEST_RE.search(query) and not _INFORMATIONAL_CONTEXT_RE.search(query):
         return {
             "gated": True,
@@ -218,7 +219,7 @@ OUT_OF_SCOPE_RESPONSE = (
 )
 
 
-def check_out_of_scope(query: str) -> Optional[dict]:
+def check_out_of_scope(query: str) -> dict | None:
     if _OFF_DOMAIN_RE.search(query) and not FINANCE_DOMAIN_KEYWORDS.search(query):
         return {
             "gated": True,
@@ -233,7 +234,7 @@ def check_out_of_scope(query: str) -> Optional[dict]:
 # Combined entrypoint
 # ---------------------------------------------------------------------------
 
-def run_prefilter(query: str, trace_id: str = "prefilter") -> Optional[dict]:
+def run_prefilter(query: str, trace_id: str = "prefilter") -> dict | None:
     """
     Runs all four FR-21/22/23/24 matchers in order. Returns the first
     match's gating response dict, or None if the query should pass
