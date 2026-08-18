@@ -11,11 +11,11 @@ query - FR-11's verify criterion is "falls in the expected band", not
 import pytest
 
 from src.routing.features import (
+    clause_count_feature,
     compute_complexity_score,
-    token_count_feature,
     keyword_feature,
     question_word_feature,
-    clause_count_feature,
+    token_count_feature,
 )
 
 # (query, expected_band) where band is "low" (<0.3), "mid" (0.3-0.6),
@@ -24,17 +24,21 @@ LABELED_QUERIES = [
     ("What is AAPL?", "low"),
     ("Who is the CEO of Tesla?", "low"),
     ("When was the Fed's last rate hike?", "low"),
-    (
-        "Compare the dividend yields of AAPL and MSFT over the last five "
-        "years, and explain why the difference exists given their "
-        "respective payout ratios and free cash flow trends.",
+   (
+        (
+            "Compare the dividend yields of AAPL and MSFT over the last five "
+            "years, and explain why the difference exists given their "
+            "respective payout ratios and free cash flow trends."
+        ),
         "high",
     ),
     (
-        "Why did the yield curve invert in 2023, and how does that "
-        "relate to the Fed's rate policy and the broader impact on "
-        "regional bank lending, which in turn affected credit "
-        "availability for small businesses?",
+        (
+            "Why did the yield curve invert in 2023, and how does that "
+            "relate to the Fed's rate policy and the broader impact on "
+            "regional bank lending, which in turn affected credit "
+            "availability for small businesses?"
+        ),
         "high",
     ),
     ("What is the relationship between inflation and bond prices?", "mid"),
