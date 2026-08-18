@@ -7,8 +7,8 @@ from unittest.mock import patch
 
 import pytest
 
-from src.retrieval.fallback import embed_query_with_fallback
 from src.common.resilience import RetriesExhaustedError, with_retry
+from src.retrieval.fallback import embed_query_with_fallback
 
 
 @pytest.mark.asyncio
