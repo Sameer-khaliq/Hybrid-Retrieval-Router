@@ -35,7 +35,7 @@ from groq import AsyncGroq
 from pydantic import BaseModel, Field, ValidationError
 
 from config.settings import settings
-from src.common.resilience import with_retry, RetriesExhaustedError
+from src.common.resilience import RetriesExhaustedError, with_retry
 from src.observability.logging_setup import get_logger
 
 _groq_client = AsyncGroq(api_key=settings.groq_api_key)
@@ -115,7 +115,7 @@ async def call_llm_router(query: str, trace_id: str = "layer1") -> dict:
         raw_text = await asyncio.wait_for(
             _invoke_groq_with_retry(query), timeout=timeout_s
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         logger.warning(
             "router_timeout",
             stage="routing",
