@@ -23,7 +23,6 @@ from src.common.resilience import RetriesExhaustedError
 from src.routing.layer0_rules import route_layer0
 from src.routing.layer1_llm import call_llm_router
 
-
 # ---------------------------------------------------------------------------
 # FR-12: Layer 0 boundary values
 # ---------------------------------------------------------------------------
