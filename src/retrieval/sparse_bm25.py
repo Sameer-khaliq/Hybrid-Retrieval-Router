@@ -18,8 +18,8 @@ from pathlib import Path
 import bm25s
 
 from config.settings import settings
-from src.observability.logging_setup import get_logger
 from src.common.qdrant_client import get_client
+from src.observability.logging_setup import get_logger
 
 INDEX_DIR = Path(settings.bm25_index_dir)
 TOKEN_CACHE_PATH = INDEX_DIR.parent / "bm25_token_cache.json"  # outside INDEX_DIR so atomic swap never touches it
