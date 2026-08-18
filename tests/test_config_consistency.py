@@ -8,8 +8,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.common.config_check import (
-    check_embedding_config_consistency,
     EmbeddingConfigMismatchError,
+    check_embedding_config_consistency,
 )
 
 
