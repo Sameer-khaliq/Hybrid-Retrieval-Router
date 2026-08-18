@@ -11,7 +11,6 @@ import pytest
 
 from src.retrieval.orchestrator import retrieve_concurrent
 
-
 DELAY_S = 0.3  # artificial delay injected into both legs
 
 
