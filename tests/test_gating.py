@@ -9,11 +9,11 @@ even though they share vocabulary with the trigger set.
 import pytest
 
 from src.gating.prefilter import (
-    run_prefilter,
-    check_non_corpus_intent,
     check_abusive_language,
     check_credential_solicitation,
+    check_non_corpus_intent,
     check_out_of_scope,
+    run_prefilter,
 )
 
 # ---------------------------------------------------------------------------
