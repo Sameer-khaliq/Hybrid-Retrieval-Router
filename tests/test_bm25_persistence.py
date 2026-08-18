@@ -7,7 +7,6 @@ Covers Step 8's three-part verify:
 """
 import asyncio
 import shutil
-from pathlib import Path
 
 import pytest
 
@@ -30,7 +29,7 @@ def isolated_index_dir(tmp_path, monkeypatch):
 
 
 def test_build_and_query_in_memory(sample_chunks):
-    retriever, chunk_ids = sparse_bm25.build_index(sample_chunks, trace_id="test_build")
+    _retriever, chunk_ids = sparse_bm25.build_index(sample_chunks, trace_id="test_build")
     assert set(chunk_ids) == {c["chunk_id"] for c in sample_chunks}
 
 
@@ -60,7 +59,7 @@ def test_get_or_build_index_loads_from_disk_when_present(sample_chunks):
     sparse_bm25._active_index = None  # simulate fresh process
     sparse_bm25._active_chunk_ids = None
 
-    retriever, chunk_ids = sparse_bm25.get_or_build_index(rebuild=False)  # should load, not rebuild
+    _retriever, chunk_ids = sparse_bm25.get_or_build_index(rebuild=False)  # should load, not rebuild
     assert set(chunk_ids) == {c["chunk_id"] for c in sample_chunks}
 
 
@@ -77,7 +76,7 @@ def test_rebuild_and_swap_adds_new_chunk_and_reuses_token_cache(sample_chunks):
 
     sparse_bm25.rebuild_and_swap(all_chunks, trace_id="test_rebuild")
 
-    retriever, chunk_ids = sparse_bm25.get_active_index()
+    _retriever, chunk_ids = sparse_bm25.get_active_index()
     assert 6 in chunk_ids
 
     cache_after = sparse_bm25._load_token_cache()
@@ -106,5 +105,5 @@ async def test_query_during_rebuild_does_not_error_or_partial(sample_chunks):
     await asyncio.gather(run_rebuild(), run_query())
 
     # after rebuild completes, new chunk should be queryable
-    retriever, chunk_ids = sparse_bm25.get_active_index()
+    _retriever, chunk_ids = sparse_bm25.get_active_index()
     assert 7 in chunk_ids
