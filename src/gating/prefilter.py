@@ -21,6 +21,23 @@ do not import anything from this module in tavily_fallback.py.
 Run order below is safety-first: abuse -> credential-solicitation ->
 non-corpus-intent -> out-of-scope. The four categories are mutually
 exclusive in practice but this order is deliberate, not incidental.
+
+UPDATE (manual testing round): three real gaps found by hand-testing
+Roman Urdu / casual phrasing, not caught by the original fixture-based
+unit tests - exactly the "regex needs deliberate broadening after real
+query variation" pattern that showed up during original Step 14 work:
+  1. Abuse-term spelling variants ("haraamda" vs "haramzada") - the
+     word list needed more spelling tolerance, not just more words.
+  2. Roman Urdu credential-solicitation had NO coverage at all -
+     "password kya hai" / "api key kahaan se milegi" passed straight
+     through. Added a parallel Roman Urdu disclosure-request pattern.
+  3. The English disclosure pattern required "your"/"the" before the
+     credential noun - "share api key" (no article) didn't match, only
+     "share your api key" did. Made the article optional.
+Flagging this explicitly rather than silently patching: FINANCE_DOMAIN_
+KEYWORDS (FR-24) almost certainly has the same English-only gap and
+hasn't been manually tested yet the way FR-22/23 just were - worth the
+same treatment before trusting it in the demo.
 """
 
 from __future__ import annotations
@@ -95,21 +112,23 @@ _ABUSE_TERMS = [
         r"(useless|garbage|trash|worthless|stupid|dumb|pathetic)\b"
     ),
 
-    r"\b(bc|mc|bsdk|bkl)\b",                    
+    r"\b(bc|mc|bsdk|bkl)\b",
     r"\b(bhenchod|behenchod|bhen\s*chod)\b",
     r"\b(madarchod|chadarmod|madar\s*chod|mc)\b",
     r"\b(bhosdike|bhosdi\s*ke|bhosadi\s*ke)\b",
     r"\b(chutiya|chootiya|chutiye|chutiyapa)\b",
-    r"\b(harami|haramkhor|haramzada|haraamzada)\b",
+    # haram*: tolerate common spelling drops (haraamda missing the "z")
+    r"\b(harami|haraami|haramkhor|haram(z)?(a)?da|haraamzada|haraamda|haramzade|haraamzade)\b",
     r"\b(kutta|kutte|kutti)\b",
     r"\b(gandu|gaand\s*marwa|gaand)\b",
     r"\b(randi|raand)\b",
     r"\b(saale|saala|kamina|kamine)\b",
     r"\b(gadha|ullu\s*ke\s*patthe?)\b",
-    r"\b(teri\s*maa|teri\s*maa\s*ki|teri\s*maa\s*ka)\b",
-    r"\b(tere\s*baap|tere\s*baap\s*ka|tere\s*baap\s*ki)\b",
-    r"\b(teri\s*behen|teri\s*behen\s*ki|teri\s*behen\s*ka)\b",
-
+    # teri/tere + maa/baap/behen(behn): tolerate both pronoun forms and
+    # the behen/behn spelling variant, with optional ka/ki suffix
+    r"\b(teri|tere)\s*maa(\s*(ki|ka))?\b",
+    r"\b(teri|tere)\s*baap(\s*(ka|ki))?\b",
+    r"\b(teri|tere)\s*beh[e]?n(\s*(ka|ki))?\b",
 
     r"\b(bakwas|fazool|kachra|bekar|ghatiya)\s+(bot|ai|system|jawab|answer)\b",
     r"\b(tu|ye\s*bot|ye\s*ai)\s+(chutiya|pagal|fazool|bekar|ghatiya|jahil)\s*(hai|ho)?\b",
@@ -137,12 +156,6 @@ def check_abusive_language(query: str) -> dict | None:
 # ---------------------------------------------------------------------------
 # FR-23: credential / secret solicitation (REQUEST-PATTERN, not keyword)
 # ---------------------------------------------------------------------------
-# Must match "give me your API key" / "what's the admin password" but NOT
-# "explain how password hashing works" or "what's your API rate-limit
-# policy". Two-part logic: (a) a positive disclosure-request pattern must
-# match, AND (b) an informational-context exclusion must NOT match. Both
-# conditions are needed - (a) alone would still catch some informational
-# phrasing that happens to contain "your".
 
 _CREDENTIAL_NOUNS = (
     r"(api\s?key|admin\s?password|password|secret(\s?key)?|credentials?|"
@@ -150,10 +163,25 @@ _CREDENTIAL_NOUNS = (
 )
 _DISCLOSURE_VERBS = r"(give|show|reveal|tell|share|provide|disclose|send|display|print|expose|leak)"
 
+# "your"/"the" made OPTIONAL below - "share api key" (no article) is a
+# real disclosure request just as much as "share your api key" is; the
+# original mandatory-article version missed the bare-noun phrasing.
 _DISCLOSURE_REQUEST_RE = re.compile(
-    rf"\b{_DISCLOSURE_VERBS}\s+(me\s+)?(your|the)\s+{_CREDENTIAL_NOUNS}\b"
+    rf"\b{_DISCLOSURE_VERBS}\s+(me\s+)?(?:(your|the)\s+)?{_CREDENTIAL_NOUNS}\b"
     rf"|\bwhat('?s| is)\s+(your|the)\s+{_CREDENTIAL_NOUNS}\b"
     rf"|\bcan\s+(i|you)\s+(get|have|see)\s+(your|the)\s+{_CREDENTIAL_NOUNS}\b",
+    re.IGNORECASE,
+)
+
+# Roman Urdu disclosure-request pattern - previously had ZERO coverage.
+# "password kya hai", "api key kahaan se milegi", "token de do", etc.
+# Kept as a separate pattern (not merged into the English one above) so
+# each can be tuned independently as more real phrasing surfaces.
+_ROMAN_URDU_DISCLOSURE_RE = re.compile(
+    rf"\b{_CREDENTIAL_NOUNS}\s*(kya\s*h(ai)?\b|"
+    rf"kahan\s*(se|par)?\s*(mil(ega|egi|ta|ti))\b|"
+    rf"batao|bata\s*do|bata\s*den|de\s*do|de\s*den)\b"
+    rf"|\b(mujhe|hume|humein)\s+{_CREDENTIAL_NOUNS}\s*(chahi?ye|do|den)\b",
     re.IGNORECASE,
 )
 
@@ -174,7 +202,8 @@ CREDENTIAL_SOLICITATION_RESPONSE = (
 
 
 def check_credential_solicitation(query: str) -> dict | None:
-    if _DISCLOSURE_REQUEST_RE.search(query) and not _INFORMATIONAL_CONTEXT_RE.search(query):
+    matched = _DISCLOSURE_REQUEST_RE.search(query) or _ROMAN_URDU_DISCLOSURE_RE.search(query)
+    if matched and not _INFORMATIONAL_CONTEXT_RE.search(query):
         return {
             "gated": True,
             "category": "FR-23",
@@ -187,11 +216,7 @@ def check_credential_solicitation(query: str) -> dict | None:
 # ---------------------------------------------------------------------------
 # FR-24: no plausible relevance to the deployed corpus/domain
 # ---------------------------------------------------------------------------
-# Config-driven allowlist rather than hardcoded finance logic, so the
-# matcher itself stays domain-agnostic (REQUIREMENTS.md §0.3 point 2) -
-# only the constant below is finance-specific for this deployment.
-# TODO(confirm with Sameer): tune this list against the FiQA corpus once
-# Step 26's demo query set exists; this is a starting point, not tuned.
+
 
 FINANCE_DOMAIN_KEYWORDS = re.compile(
     r"\b(stock|share|equity|bond|dividend|portfolio|invest(ment|or|ing)?|"
