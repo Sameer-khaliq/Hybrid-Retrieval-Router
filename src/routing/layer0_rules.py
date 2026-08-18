@@ -13,7 +13,7 @@ wiring in Step 17 only has to gather one coroutine for "the routing side."
 
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Literal
 
 from config.settings import settings
 from src.observability.logging_setup import get_logger
@@ -23,7 +23,7 @@ from src.routing.layer1_llm import call_llm_router
 Path = Literal["fast", "deep"]
 
 
-def route_layer0(score: float) -> Optional[Path]:
+def route_layer0(score: float) -> Path | None:
     """
     FR-12: score < tau_low -> fast, score > tau_high -> deep,
     tau_low <= score <= tau_high -> None (defer to Layer 1).
