@@ -16,7 +16,6 @@ from __future__ import annotations
 import json
 from unittest.mock import AsyncMock, patch
 
-import pytest
 from fastapi.testclient import TestClient
 
 from config.settings import settings
@@ -83,23 +82,25 @@ def test_oversized_query_returns_4xx_no_downstream_call():
     assert 400 <= response.status_code < 500
     mock_run_query.assert_not_called()
 
-
 def test_query_at_exact_max_length_is_accepted():
-    with patch("src.api.main.run_query", new=AsyncMock(return_value=FAKE_GATED_RESULT)):
-        with patch("src.api.main.generate_atomic", new=AsyncMock(return_value={"answer": FAKE_GATED_RESULT["answer_text"], "streamed": False, "degraded": False})):
-            response = client.post("/query", json={"query": "x" * settings.max_query_length})
+    with (
+        patch("src.api.main.run_query", new=AsyncMock(return_value=FAKE_GATED_RESULT)),
+        patch("src.api.main.generate_atomic", new=AsyncMock(return_value={"answer": FAKE_GATED_RESULT["answer_text"], "streamed": False, "degraded": False})),
+    ):
+        response = client.post("/query", json={"query": "x" * settings.max_query_length})
     assert response.status_code == 200
-
 
 # ---- FR-15/26: gated (atomic) response contract ---------------------------
 
 def test_gated_query_returns_single_atomic_json_body():
-    with patch("src.api.main.run_query", new=AsyncMock(return_value=FAKE_GATED_RESULT)):
-        with patch(
+    with (
+        patch("src.api.main.run_query", new=AsyncMock(return_value=FAKE_GATED_RESULT)),
+        patch(
             "src.api.main.generate_atomic",
             new=AsyncMock(return_value={"answer": FAKE_GATED_RESULT["answer_text"], "streamed": False, "degraded": False}),
-        ):
-            response = client.post("/query", json={"query": "hi"})
+        ),
+    ):
+        response = client.post("/query", json={"query": "hi"})
 
     assert response.status_code == 200
     body = response.json()
@@ -113,9 +114,11 @@ def test_gated_query_returns_single_atomic_json_body():
 # ---- FR-15/26: streaming response contract ---------------------------------
 
 def test_normal_query_streams_ndjson_deltas_then_final_schema():
-    with patch("src.api.main.run_query", new=AsyncMock(return_value=FAKE_STREAMING_RESULT)):
-        with patch("src.api.main.generate_streaming", new=_fake_stream):
-            response = client.post("/query", json={"query": "What is the capital of France?"})
+    with (
+        patch("src.api.main.run_query", new=AsyncMock(return_value=FAKE_STREAMING_RESULT)),
+        patch("src.api.main.generate_streaming", new=_fake_stream),
+    ):
+        response = client.post("/query", json={"query": "What is the capital of France?"})
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/event-stream")
@@ -142,10 +145,12 @@ def test_normal_query_streams_ndjson_deltas_then_final_schema():
 # ---- FR-16: health endpoint -------------------------------------------------
 
 def test_health_endpoint_reports_all_dependencies_ok():
-    with patch("src.api.main._check_qdrant", new=AsyncMock(return_value="ok")):
-        with patch("src.api.main._check_groq", new=AsyncMock(return_value="ok")):
-            with patch("src.api.main._check_gemini", new=AsyncMock(return_value="ok")):
-                with patch("src.api.main._check_tavily", new=AsyncMock(return_value="ok")):
+    with (
+        patch("src.api.main._check_qdrant", new=AsyncMock(return_value="ok")),
+        patch("src.api.main._check_groq", new=AsyncMock(return_value="ok")),
+        patch("src.api.main._check_gemini", new=AsyncMock(return_value="ok")),
+        patch("src.api.main._check_tavily", new=AsyncMock(return_value="ok")),
+    ):
                     response = client.get("/health")
 
     assert response.status_code == 200
@@ -155,11 +160,13 @@ def test_health_endpoint_reports_all_dependencies_ok():
 
 
 def test_health_endpoint_reports_degraded_when_one_dependency_down():
-    with patch("src.api.main._check_qdrant", new=AsyncMock(return_value="unreachable: connection refused")):
-        with patch("src.api.main._check_groq", new=AsyncMock(return_value="ok")):
-            with patch("src.api.main._check_gemini", new=AsyncMock(return_value="ok")):
-                with patch("src.api.main._check_tavily", new=AsyncMock(return_value="ok")):
-                    response = client.get("/health")
+    with (
+        patch("src.api.main._check_qdrant", new=AsyncMock(return_value="unreachable: connection refused")),
+        patch("src.api.main._check_groq", new=AsyncMock(return_value="ok")),
+        patch("src.api.main._check_gemini", new=AsyncMock(return_value="ok")),
+        patch("src.api.main._check_tavily", new=AsyncMock(return_value="ok")),
+    ):
+        response = client.get("/health")
 
     assert response.status_code == 200
     body = response.json()
