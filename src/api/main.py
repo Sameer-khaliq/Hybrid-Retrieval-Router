@@ -12,6 +12,7 @@ from src.api.schemas import HealthResponse, QueryRequest
 from src.common.qdrant_client import get_client
 from src.generation.groq_stream import generate_atomic, generate_streaming
 from src.pipeline.run_query import run_query
+from src.retrieval.rerank import preload_reranker
 from src.retrieval.sparse_bm25 import get_or_build_index
 
 
@@ -23,6 +24,19 @@ async def lifespan(app: FastAPI):
         print("[api] BM25 active index loaded into memory successfully.")
     except Exception as exc:  # noqa: BLE001
         print(f"[api] Warning: Could not initialize BM25 on startup: {exc}")
+
+    # Startup: Load the CrossEncoder reranker into memory once, here,
+    # instead of lazily on first deep-path request. This is the fix for
+    # the 11-14s-per-request reranker latency: without this, the first
+    # (and, if the singleton pattern was ever bypassed, every) deep-path
+    # request paid full model-load + Hugging Face Hub round-trip cost
+    # synchronously inside the request path.
+    try:
+        preload_reranker()
+        print("[api] CrossEncoder reranker loaded into memory successfully.")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[api] Warning: Could not preload reranker on startup: {exc}")
+
     yield
 
 
