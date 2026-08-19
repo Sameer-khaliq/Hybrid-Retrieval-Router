@@ -26,19 +26,38 @@ This also means no separate "probe" call is needed before streaming -
 the real generation call IS the reachability check, so NFR-4's
 per-query API-call budget isn't spent on a call that does nothing but
 check if another call would work.
+
+CONCURRENCY CAP (Root cause #2 fix - deep-path 429s): once the
+reranker's event-loop-blocking bug (rerank.py) is fixed, deep-path
+requests are no longer artificially serialized by a starved event
+loop, so they can genuinely fire concurrently - which is exactly what
+was pushing gpt-oss-120b past Groq's free-tier TPM/RPM ceiling.
+_groq_deep_semaphore below caps concurrent in-flight groq_deep_model
+calls to settings.groq_deep_max_concurrency, so the app respects the
+limit proactively instead of firing-then-backing-off on every 429.
+Only the deep model is capped - fast-path (which shares gpt-oss-20b
+with the Layer-1 router) hasn't shown 429s and isn't capped here.
 """
 
 from __future__ import annotations
 
-from typing import Any, AsyncIterator, Literal
+import asyncio
+from collections.abc import AsyncIterator
+from typing import Any, Literal
 
 from groq import AsyncGroq
 
 from config.settings import settings
-from src.common.resilience import with_retry, RetriesExhaustedError
+from src.common.resilience import RetriesExhaustedError, with_retry
 from src.observability.logging_setup import get_logger
 
 _groq_client = AsyncGroq(api_key=settings.groq_api_key)
+
+# Caps concurrent in-flight calls to settings.groq_deep_model. Held for
+# the full duration of a deep-path generation (including retries and
+# token streaming), released early if/when NFR-9's deep->fast fallback
+# kicks in, since the fallback call runs on the uncapped fast model.
+_groq_deep_semaphore = asyncio.Semaphore(settings.groq_deep_max_concurrency)
 
 Path = Literal["fast", "deep"]
 
@@ -116,67 +135,86 @@ async def generate_streaming(
     model = _model_for_path(path)
     degraded = False
 
+    # Acquire the deep-model concurrency cap before the first attempt.
+    # Held through retries; released early below if we fall back to the
+    # fast model, and always released in the outer finally (including on
+    # early generator close, e.g. client disconnect mid-stream).
+    holding_deep_semaphore = False
+    if model == settings.groq_deep_model:
+        await _groq_deep_semaphore.acquire()
+        holding_deep_semaphore = True
+
     try:
-        stream = await with_retry(
-            lambda: _create_stream(model, query, context_block),
-            max_retries=settings.max_retries,
-        )
-    except RetriesExhaustedError as exc:
-        if path == "deep":
-            logger.warning(
-                "deep_model_unavailable_fallback_to_fast",
-                stage="generation",
-                failed_model=model,
-                error=str(exc),
+        try:
+            stream = await with_retry(
+                lambda: _create_stream(model, query, context_block),
+                max_retries=settings.max_retries,
             )
-            model = settings.groq_fast_model
-            degraded = True
-            try:
-                stream = await with_retry(
-                    lambda: _create_stream(model, query, context_block),
-                    max_retries=settings.max_retries,
-                )
-            except RetriesExhaustedError as exc2:
-                # NFR-9 only specifies deep -> fast fallback. It doesn't
-                # define a further tier for "fast-path model itself is
-                # down" - there is no lower tier to fall back to. This
-                # is a genuine gap in the requirements doc, not
-                # something I'm inventing a default for silently: flag
-                # it back to the caller as an explicit error sentinel
-                # rather than picking an undocumented behavior.
-                logger.error(
-                    "fast_model_also_unavailable_no_further_fallback",
+        except RetriesExhaustedError as exc:
+            if path == "deep":
+                logger.warning(
+                    "deep_model_unavailable_fallback_to_fast",
                     stage="generation",
-                    error=str(exc2),
+                    failed_model=model,
+                    error=str(exc),
+                )
+                if holding_deep_semaphore:
+                    # Falling back to the fast model - release the deep
+                    # slot now rather than holding it for the duration
+                    # of a call that no longer touches the deep model.
+                    _groq_deep_semaphore.release()
+                    holding_deep_semaphore = False
+                model = settings.groq_fast_model
+                degraded = True
+                try:
+                    stream = await with_retry(
+                        lambda: _create_stream(model, query, context_block),
+                        max_retries=settings.max_retries,
+                    )
+                except RetriesExhaustedError as exc2:
+                    # NFR-9 only specifies deep -> fast fallback. It doesn't
+                    # define a further tier for "fast-path model itself is
+                    # down" - there is no lower tier to fall back to. This
+                    # is a genuine gap in the requirements doc, not
+                    # something I'm inventing a default for silently: flag
+                    # it back to the caller as an explicit error sentinel
+                    # rather than picking an undocumented behavior.
+                    logger.error(
+                        "fast_model_also_unavailable_no_further_fallback",
+                        stage="generation",
+                        error=str(exc2),
+                    )
+                    yield {"error": "generation_unavailable", "degraded": True}
+                    yield {"done": True, "model_used": model, "degraded": True}
+                    return
+            else:
+                # path == "fast" failing outright - same "no lower tier"
+                # gap as above, just reached directly instead of via a
+                # deep-path fallback attempt first.
+                logger.error(
+                    "fast_model_unavailable_no_fallback",
+                    stage="generation",
+                    error=str(exc),
                 )
                 yield {"error": "generation_unavailable", "degraded": True}
                 yield {"done": True, "model_used": model, "degraded": True}
                 return
-        else:
-            # path == "fast" failing outright - same "no lower tier"
-            # gap as above, just reached directly instead of via a
-            # deep-path fallback attempt first.
-            logger.error(
-                "fast_model_unavailable_no_fallback",
-                stage="generation",
-                error=str(exc),
-            )
-            yield {"error": "generation_unavailable", "degraded": True}
-            yield {"done": True, "model_used": model, "degraded": True}
-            return
 
-    async for event in stream:
-        delta = event.choices[0].delta.content
-        if delta:
-            yield {"delta": delta}
+        async for event in stream:
+            delta = event.choices[0].delta.content
+            if delta:
+                yield {"delta": delta}
 
-    logger.info(
-        "generation_complete",
-        stage="generation",
-        model_used=model,
-        degraded=degraded,
-    )
-    yield {"done": True, "model_used": model, "degraded": degraded}
+        logger.info(
+            "generation_complete",
+            stage="generation",
+            model_used=model,
+            degraded=degraded,
+        )
+        yield {"done": True, "model_used": model, "degraded": degraded}
+    finally:
+        if holding_deep_semaphore:
+            _groq_deep_semaphore.release()
 
 
 async def generate_atomic(text: str, trace_id: str = "gated_response") -> dict:
