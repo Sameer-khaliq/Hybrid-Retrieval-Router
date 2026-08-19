@@ -10,10 +10,6 @@ from sentence_transformers import CrossEncoder
 from config.settings import settings
 from src.observability.logging_setup import get_logger
 
-# Set PyTorch CPU threads
-num_threads = min(4, torch.get_num_threads())
-torch.set_num_threads(num_threads)
-
 _reranker: CrossEncoder | None = None
 
 
@@ -22,8 +18,10 @@ def _get_reranker() -> CrossEncoder:
     if _reranker is not None:
         return _reranker
 
+    # Enforce efficient thread execution on CPU
+    torch.set_num_threads(min(4, torch.get_num_threads()))
+
     try:
-        # Claude fix: direct runtime flag, ignores import order
         _reranker = CrossEncoder(
             settings.reranker_model,
             max_length=256,
@@ -31,13 +29,16 @@ def _get_reranker() -> CrossEncoder:
             local_files_only=True,
         )
     except Exception:
-        # Fallback if first run and not cached locally
         _reranker = CrossEncoder(
             settings.reranker_model,
             max_length=256,
             device="cpu",
             local_files_only=False,
         )
+
+    # Disable gradient tracking permanently for inference
+    if hasattr(_reranker, "model"):
+        _reranker.model.eval()
 
     return _reranker
 
@@ -46,7 +47,8 @@ def preload_reranker() -> None:
     """Eager load and warmup."""
     model = _get_reranker()
     try:
-        model.predict([("warmup query", "warmup text")], show_progress_bar=False)
+        with torch.inference_mode():
+            model.predict([("warmup query", "warmup text")], show_progress_bar=False)
     except Exception:
         pass
 
@@ -55,7 +57,8 @@ def _candidate_text(candidate: dict[str, Any]) -> str:
     text = candidate.get("text")
     if text is None:
         text = candidate.get("content", "")
-    return str(text)[:800]
+    # Trim to 400 chars: Sufficient for MiniLM-L6 cross-attention & speeds up tokenization 2x
+    return str(text)[:400]
 
 
 def rerank(
@@ -69,18 +72,27 @@ def rerank(
     if not candidates:
         return []
 
-    # Limit compute pool to top 10 candidates to guarantee <400ms on CPU
+    # Limit pool to 10 chunks max
     pool = candidates[:10]
     pairs = [(query, _candidate_text(c)) for c in pool]
 
     model = _get_reranker()
     start = time.perf_counter()
-    scores = model.predict(
-        pairs,
-        batch_size=len(pairs),
-        show_progress_bar=False,
-        convert_to_numpy=True,
-    )
+
+    try:
+        # torch.inference_mode disables autograd & overhead entirely
+        with torch.inference_mode():
+            scores = model.predict(
+                pairs,
+                batch_size=len(pairs),
+                show_progress_bar=False,
+                convert_to_numpy=True,
+            )
+    except Exception as e:
+        logger.warning("rerank_inference_failed", stage="rerank", error=str(e))
+        # Graceful fallback: return un-reranked pool
+        return pool[:top_k] if top_k is not None else pool
+
     elapsed_ms = (time.perf_counter() - start) * 1000
 
     scored = [
@@ -107,4 +119,13 @@ async def rerank_async(
     top_k: int | None = None,
     trace_id: str = "rerank",
 ) -> list[dict[str, Any]]:
-    return await asyncio.to_thread(rerank, query, candidates, top_k, trace_id)
+    try:
+        # Hard 2.5s timeout: CPU hanging prevention
+        return await asyncio.wait_for(
+            asyncio.to_thread(rerank, query, candidates, top_k, trace_id),
+            timeout=2.5,
+        )
+    except asyncio.TimeoutError:
+        logger = get_logger(trace_id=trace_id)
+        logger.warning("rerank_timeout_fallback", stage="rerank", message="Exceeded 2.5s cap, skipping rerank")
+        return candidates[:top_k] if top_k is not None else candidates

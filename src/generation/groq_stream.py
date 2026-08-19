@@ -168,7 +168,7 @@ async def generate_streaming(
     degraded = False
 
     # Dynamic token budgeting based on path (fast vs deep)
-    tokens_limit = 150 if path == "fast" else 250
+    tokens_limit = 200 if path == "fast" else 250
 
     # Acquire the deep-model concurrency cap before the first attempt.
     # Held through retries; released early below if we fall back to the
