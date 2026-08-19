@@ -20,7 +20,6 @@ import pytest
 
 from src.pipeline.run_query import run_query
 
-
 GATED_RESULT = {
     "gated": True,
     "category": "FR-21",
@@ -63,11 +62,13 @@ FAKE_TAVILY_RESULT = {
 
 @pytest.mark.asyncio
 async def test_gated_query_short_circuits_all_downstream_stages():
-    with patch("src.pipeline.run_query.run_prefilter", return_value=GATED_RESULT):
-        with patch("src.pipeline.run_query.retrieve_and_route_concurrent", new=AsyncMock()) as mock_retrieve:
-            with patch("src.pipeline.run_query.apply_conditional_rerank", new=AsyncMock()) as mock_rerank:
-                with patch("src.pipeline.run_query.apply_tavily_fallback", new=AsyncMock()) as mock_tavily:
-                    result = await run_query("Hi there")
+    with (
+        patch("src.pipeline.run_query.run_prefilter", return_value=GATED_RESULT),
+        patch("src.pipeline.run_query.retrieve_and_route_concurrent", new=AsyncMock()) as mock_retrieve,
+        patch("src.pipeline.run_query.apply_conditional_rerank", new=AsyncMock()) as mock_rerank,
+        patch("src.pipeline.run_query.apply_tavily_fallback", new=AsyncMock()) as mock_tavily,
+    ):
+        result = await run_query("Hi there")
 
     mock_retrieve.assert_not_called()
     mock_rerank.assert_not_called()
@@ -84,21 +85,23 @@ async def test_gated_query_short_circuits_all_downstream_stages():
 
 @pytest.mark.asyncio
 async def test_full_chain_data_threads_correctly():
-    with patch("src.pipeline.run_query.run_prefilter", return_value=None):
-        with patch(
+    with (
+        patch("src.pipeline.run_query.run_prefilter", return_value=None),
+        patch(
             "src.pipeline.run_query.retrieve_and_route_concurrent",
             new=AsyncMock(return_value=FAKE_RETRIEVAL_AND_ROUTING),
-        ):
-            with patch("src.pipeline.run_query.rrf_fuse", return_value=FAKE_FUSED) as mock_fuse:
-                with patch(
-                    "src.pipeline.run_query.apply_conditional_rerank",
-                    new=AsyncMock(return_value=FAKE_RERANKED),
-                ) as mock_rerank:
-                    with patch(
-                        "src.pipeline.run_query.apply_tavily_fallback",
-                        new=AsyncMock(return_value=FAKE_TAVILY_RESULT),
-                    ) as mock_tavily:
-                        result = await run_query("What is the P/E ratio?")
+        ),
+        patch("src.pipeline.run_query.rrf_fuse", return_value=FAKE_FUSED) as mock_fuse,
+        patch(
+            "src.pipeline.run_query.apply_conditional_rerank",
+            new=AsyncMock(return_value=FAKE_RERANKED),
+        ) as mock_rerank,
+        patch(
+            "src.pipeline.run_query.apply_tavily_fallback",
+            new=AsyncMock(return_value=FAKE_TAVILY_RESULT),
+        ) as mock_tavily,
+    ):
+        result = await run_query("What is the P/E ratio?")
 
     # rrf_fuse called with the retrieval legs
     mock_fuse.assert_called_once_with(
@@ -131,23 +134,31 @@ async def test_full_chain_data_threads_correctly():
 
 @pytest.mark.asyncio
 async def test_empty_chunks_after_tavily_short_circuits_before_generation():
-    empty_tavily_result = {**FAKE_TAVILY_RESULT, "chunks": [], "degraded": True, "tavily_triggered": True, "tavily_trigger_reason": "low_confidence"}
+    empty_tavily_result = {
+        **FAKE_TAVILY_RESULT,
+        "chunks": [],
+        "degraded": True,
+        "tavily_triggered": True,
+        "tavily_trigger_reason": "low_confidence",
+    }
 
-    with patch("src.pipeline.run_query.run_prefilter", return_value=None):
-        with patch(
+    with (
+        patch("src.pipeline.run_query.run_prefilter", return_value=None),
+        patch(
             "src.pipeline.run_query.retrieve_and_route_concurrent",
             new=AsyncMock(return_value=FAKE_RETRIEVAL_AND_ROUTING),
-        ):
-            with patch("src.pipeline.run_query.rrf_fuse", return_value=FAKE_FUSED):
-                with patch(
-                    "src.pipeline.run_query.apply_conditional_rerank",
-                    new=AsyncMock(return_value=FAKE_RERANKED),
-                ):
-                    with patch(
-                        "src.pipeline.run_query.apply_tavily_fallback",
-                        new=AsyncMock(return_value=empty_tavily_result),
-                    ):
-                        result = await run_query("some obscure query")
+        ),
+        patch("src.pipeline.run_query.rrf_fuse", return_value=FAKE_FUSED),
+        patch(
+            "src.pipeline.run_query.apply_conditional_rerank",
+            new=AsyncMock(return_value=FAKE_RERANKED),
+        ),
+        patch(
+            "src.pipeline.run_query.apply_tavily_fallback",
+            new=AsyncMock(return_value=empty_tavily_result),
+        ),
+    ):
+        result = await run_query("some obscure query")
 
     assert result["gated"] is False
     assert result["answer_text"] is not None  # insufficient-info message set
@@ -161,20 +172,22 @@ async def test_degraded_flag_propagates_from_any_stage():
     degraded, even if the others were clean."""
     retrieval_degraded = {**FAKE_RETRIEVAL_AND_ROUTING, "degraded": True}
 
-    with patch("src.pipeline.run_query.run_prefilter", return_value=None):
-        with patch(
+    with (
+        patch("src.pipeline.run_query.run_prefilter", return_value=None),
+        patch(
             "src.pipeline.run_query.retrieve_and_route_concurrent",
             new=AsyncMock(return_value=retrieval_degraded),
-        ):
-            with patch("src.pipeline.run_query.rrf_fuse", return_value=FAKE_FUSED):
-                with patch(
-                    "src.pipeline.run_query.apply_conditional_rerank",
-                    new=AsyncMock(return_value=FAKE_RERANKED),
-                ):
-                    with patch(
-                        "src.pipeline.run_query.apply_tavily_fallback",
-                        new=AsyncMock(return_value=FAKE_TAVILY_RESULT),
-                    ):
-                        result = await run_query("query")
+        ),
+        patch("src.pipeline.run_query.rrf_fuse", return_value=FAKE_FUSED),
+        patch(
+            "src.pipeline.run_query.apply_conditional_rerank",
+            new=AsyncMock(return_value=FAKE_RERANKED),
+        ),
+        patch(
+            "src.pipeline.run_query.apply_tavily_fallback",
+            new=AsyncMock(return_value=FAKE_TAVILY_RESULT),
+        ),
+    ):
+        result = await run_query("query")
 
     assert result["degraded"] is True
