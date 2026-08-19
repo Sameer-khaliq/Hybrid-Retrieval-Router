@@ -91,17 +91,19 @@ async def test_deep_path_failure_falls_back_to_fast_model_degraded_true():
             raise RuntimeError("simulated deep model failure")
         return _fake_stream(fallback_tokens)
 
-    with patch("src.generation.groq_stream._create_stream", side_effect=_side_effect):
-        with patch(
+    with (
+        patch("src.generation.groq_stream._create_stream", side_effect=_side_effect),
+        patch(
             "src.generation.groq_stream.with_retry",
             side_effect=[
                 RetriesExhaustedError("deep model exhausted"),
                 _fake_stream(fallback_tokens),
             ],
-        ):
-            events = [
-                e async for e in generate_streaming("complex query", [{"text": "ctx"}], "deep")
-            ]
+        ),
+    ):
+        events = [
+            e async for e in generate_streaming("complex query", [{"text": "ctx"}], "deep")
+        ]
 
     deltas = [e["delta"] for e in events if "delta" in e]
     assert deltas == fallback_tokens
