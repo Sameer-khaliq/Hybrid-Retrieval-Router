@@ -74,7 +74,7 @@ class Settings(BaseSettings):
     # ---- Reranking top-K / top-K' (FR-6) -----------------------------------
     rerank_top_k: int = Field(default=15)      # deep-path
     rerank_top_k_fast: int = Field(default=5)  # fast-path (reduced or skipped)
-    rerank_candidate_pool: int = 20  # candidates fed into cross-encoder before sorting/trimming
+    rerank_candidate_pool: int = 8  # candidates fed into cross-encoder before sorting/trimming
     # ---- Cross-encoder reranker model (FR-10, Step 18) ---------------------
     reranker_model: str = Field(default="cross-encoder/ms-marco-MiniLM-L-6-v2")
 

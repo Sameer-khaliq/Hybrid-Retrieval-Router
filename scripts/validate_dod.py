@@ -47,6 +47,10 @@ import httpx
 
 from src.eval.run_eval import run_eval
 from src.retrieval.sparse_bm25 import get_or_build_index
+from src.retrieval.rerank import preload_reranker
+preload_reranker()
+print("[dod] Reranker warmed up.")
+# phir eval loop shuru karo
 API_BASE = "http://localhost:8000"
 
 STRUCTURAL_GATES = {

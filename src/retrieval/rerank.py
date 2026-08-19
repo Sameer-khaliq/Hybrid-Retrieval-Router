@@ -128,8 +128,8 @@ async def rerank_async(
         except asyncio.TimeoutError:
             logger = get_logger(trace_id=trace_id)
             logger.warning(
-                "rerank_timeout_fallback",
-                stage="rerank",
-                message="Exceeded 2.5s cap, skipping rerank",
-            )
+                    "rerank_timeout_fallback",
+                    stage="rerank",
+                    detail="Exceeded timeout cap, skipping rerank",
+                )
             return candidates[:top_k] if top_k is not None else candidates
