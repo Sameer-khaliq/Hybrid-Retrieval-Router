@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Atlas | Hybrid Retrieval</title>
+  <!-- Tailwind CSS is compiled locally for production use. -->
+  <link rel="stylesheet" href="./dist/tailwind.css">
+  <!-- Lucide Icons via CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
+
+    :root {
+      --ink: #17212b;
+      --muted: #71808d;
+      --line: #d9e1e6;
+      --paper: #f4f7f8;
+      --panel: #ffffff;
+      --blue: #1769aa;
+      --blue-soft: #e7f2fb;
+      --orange: #e46b38;
+      --green: #198754;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      background: var(--paper);
+      color: var(--ink);
+      font-family: 'DM Sans', sans-serif;
+    }
+
+    button,
+    textarea {
+      font: inherit;
+    }
+
+    .app-header {
+      background: rgba(255, 255, 255, .9);
+      border-color: var(--line);
+    }
+
+    .brand-mark {
+      background: var(--ink);
+      color: white;
+    }
+
+    .pipeline {
+      background: #eef3f5;
+      border-color: var(--line);
+    }
+
+    .step-icon-wrap {
+      background: white;
+      border-color: #cdd8df;
+      color: #9aa8b2;
+    }
+
+    .step-label {
+      color: #84919b;
+    }
+
+    .step-line {
+      background: #d4dee4;
+    }
+
+    .workspace {
+      background: radial-gradient(circle at 12% 8%, rgba(228, 107, 56, .08), transparent 27%), var(--paper);
+    }
+
+    .empty-kicker {
+      color: var(--blue);
+    }
+
+    .empty-title {
+      color: var(--ink);
+    }
+
+    .empty-copy {
+      color: var(--muted);
+    }
+
+    .composer {
+      background: rgba(255, 255, 255, .94);
+      border-color: var(--line);
+    }
+
+    .query-input {
+      background: #f8fafb;
+      border-color: #cbd7de;
+      color: var(--ink);
+    }
+
+    .query-input::placeholder {
+      color: #98a6af;
+    }
+
+    .query-input:focus {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px rgba(23, 105, 170, .12);
+    }
+
+    .send-button {
+      background: var(--ink);
+      color: white;
+      border-color: var(--ink);
+    }
+
+    .send-button:hover {
+      background: var(--blue);
+      border-color: var(--blue);
+    }
+
+    .chip-btn {
+      background: white;
+      border-color: #cbd7de;
+      color: #61717d;
+    }
+
+    .chip-btn:hover,
+    .chip-btn.active {
+      border-color: var(--blue);
+      color: var(--blue);
+      background: var(--blue-soft);
+    }
+
+    .message-query {
+      background: rgba(231, 242, 251, .7);
+      border-left: 3px solid var(--blue);
+      color: var(--ink);
+      padding-left: 1rem;
+    }
+
+    .message-answer {
+      background: var(--panel);
+      border-color: var(--line);
+      box-shadow: 0 10px 30px rgba(26, 45, 58, .05);
+    }
+
+    .message-answer .content {
+      color: #2d3d49;
+    }
+
+    .answer-head {
+      color: var(--blue);
+    }
+
+    .message-divider {
+      border-color: #edf1f3;
+    }
+
+    .copy-button {
+      color: #8796a0;
+    }
+
+    .copy-button:hover {
+      color: var(--blue);
+      background: var(--blue-soft);
+    }
+
+    .source-pill {
+      background: #f5f8f9;
+      border-color: #dce5e9;
+      color: #73828c;
+    }
+
+    .meta-row {
+      color: #8997a0;
+      column-gap: .75rem;
+      row-gap: .5rem;
+    }
+
+    .route-fast {
+      border-color: #b8dfcd;
+      color: var(--green);
+      background: #f0faf5;
+    }
+
+    .route-deep {
+      border-color: #f3c7b5;
+      color: #b8522d;
+      background: #fff6f1;
+    }
+
+    .code-block {
+      background: #17212b;
+      border-color: #263946;
+      color: #e8f0f4;
+    }
+
+    .code-block .code-top {
+      border-color: #263946;
+      color: #a8bbc5;
+    }
+
+    /* Thin, quiet scrollbar keeps the workspace feeling like a canvas. */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #c8d3da;
+      border-radius: 3px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #aab9c2;
+    }
+
+    .cursor-blink {
+      display: inline-block;
+      width: 6px;
+      height: 14px;
+      background-color: var(--orange);
+      vertical-align: middle;
+      animation: blink 1s step-end infinite;
+      margin-left: 2px;
+    }
+
+    @keyframes blink {
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0;
+      }
+    }
+
+    @keyframes rise {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .message-enter {
+      animation: rise .35s ease-out both;
+    }
+
+    @media (max-height: 520px) {
+      .workspace {
+        padding-top: 1.5rem;
+        padding-bottom: 1.5rem;
+      }
+
+      .empty-title {
+        font-size: 1.75rem;
+        line-height: 1.05;
+      }
+
+      .empty-copy {
+        font-size: .75rem;
+        line-height: 1.25rem;
+      }
+    }
+  </style>
+</head>
+
+<body class="antialiased h-screen flex flex-col overflow-hidden select-none">
+
+  <!-- Top Bar -->
+  <header class="app-header flex h-16 shrink-0 items-center justify-between border-b px-5 md:px-10">
+    <div class="flex items-center gap-2">
+      <span class="brand-mark flex h-9 w-9 items-center justify-center rounded-xl"><i data-lucide="orbit"
+          class="h-4 w-4"></i></span>
+      <div>
+        <div class="text-sm font-bold tracking-tight">Atlas Retrieval</div>
+        <div class="font-mono text-[10px] uppercase tracking-[.18em] text-slate-400">hybrid knowledge console</div>
+      </div>
+    </div>
+    <div class="flex items-center gap-3">
+      <div
+        class="flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 font-mono text-[10px] uppercase tracking-wider text-emerald-700">
+        <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span> system online
+      </div>
+    </div>
+  </header>
+
+  <!-- Pipeline Tracker -->
+  <div id="pipelineTracker" class="pipeline flex w-full items-center gap-2 overflow-x-auto border-b px-5 py-3 md:px-10">
+    <!-- Step 1: Analyzing -->
+    <div class="flex shrink-0 items-center gap-2 step-item" data-step="analyzing">
+      <div class="step-icon-wrap flex h-8 w-8 items-center justify-center rounded-xl border transition-colors">
+        <i data-lucide="cpu" class="h-3.5 w-3.5"></i>
+      </div>
+      <span class="step-label font-mono text-[10px] uppercase tracking-wider">Analyzing</span>
+    </div>
+    <div class="step-line h-px flex-1" data-line="0"></div>
+
+    <!-- Step 2: Routing -->
+    <div class="flex shrink-0 items-center gap-2 step-item" data-step="routing">
+      <div class="step-icon-wrap flex h-8 w-8 items-center justify-center rounded-xl border transition-colors">
+        <i data-lucide="git-branch" class="h-3.5 w-3.5"></i>
+      </div>
+      <span class="step-label font-mono text-[10px] uppercase tracking-wider">Routing</span>
+    </div>
+    <div class="step-line h-px flex-1" data-line="1"></div>
+
+    <!-- Step 3: Retrieving -->
+    <div class="flex shrink-0 items-center gap-2 step-item" data-step="retrieving">
+      <div class="step-icon-wrap flex h-8 w-8 items-center justify-center rounded-xl border transition-colors">
+        <i data-lucide="database" class="h-3.5 w-3.5"></i>
+      </div>
+      <span class="step-label font-mono text-[10px] uppercase tracking-wider">Retrieving</span>
+    </div>
+    <div class="step-line h-px flex-1" data-line="2"></div>
+
+    <!-- Step 4: Generating -->
+    <div class="flex shrink-0 items-center gap-2 step-item" data-step="generating">
+      <div class="step-icon-wrap flex h-8 w-8 items-center justify-center rounded-xl border transition-colors">
+        <i data-lucide="sparkles" class="h-3.5 w-3.5"></i>
+      </div>
+      <span class="step-label font-mono text-[10px] uppercase tracking-wider">Generating</span>
+    </div>
+  </div>
+
+  <!-- Messages Scroll Area -->
+  <main id="chatContainer" class="workspace flex-1 overflow-y-auto px-5 py-10 md:px-10 select-text">
+    <div id="emptyState" class="flex min-h-full flex-col items-center justify-center gap-3 py-4 text-center">
+      <div class="empty-kicker font-mono text-[10px] uppercase tracking-[.25em]">Your research desk</div>
+      <div class="empty-title text-3xl font-bold tracking-tight md:text-5xl">Ask the corpus<br><span
+          class="text-orange-500">better questions.</span></div>
+      <div class="empty-copy max-w-md text-sm leading-6">Search across your indexed knowledge base with a route that
+        adapts to the shape of every question.</div>
+    </div>
+    <div id="messagesList" class="mx-auto flex max-w-4xl flex-col gap-5 hidden">
+      <!-- Chat bubbles will be inserted here -->
+    </div>
+    <div id="scrollAnchor"></div>
+  </main>
+
+  <!-- Input and Quick Chips Area -->
+  <footer class="composer shrink-0 border-t px-5 py-4 md:px-10">
+    <div class="mx-auto max-w-4xl">
+      <!-- Quick Chips -->
+      <div class="mb-3 flex flex-wrap items-center gap-2" id="chipContainer">
+        <button data-chip="explain" data-prefix="Explain this in plain, accessible terms. "
+          class="chip-btn flex items-center gap-1.5 rounded-full border px-3 py-1.5 font-mono text-[11px] transition-colors">
+          <i data-lucide="message-square-text" class="h-3 w-3"></i>
+          <span>Explain</span>
+        </button>
+      </div>
+
+      <!-- Input Form -->
+      <div class="flex items-end gap-2">
+        <textarea id="queryInput" rows="1" placeholder="Query the corpus..."
+          class="query-input max-h-32 flex-1 resize-none rounded-2xl border px-4 py-3 text-sm outline-none transition disabled:opacity-50"></textarea>
+        <button id="sendBtn" disabled aria-label="Send query"
+          class="send-button flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border transition-colors disabled:cursor-not-allowed disabled:opacity-40">
+          <i data-lucide="send" id="sendIcon" class="h-4 w-4"></i>
+        </button>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Vanilla JS Logic -->
+  <script>
+    const API_URL = 'http://localhost:8000'; // Change to your backend URL if needed
+
+    const STEPS = ['analyzing', 'routing', 'retrieving', 'generating'];
+    const STEP_ICONS = {
+      analyzing: 'cpu',
+      routing: 'git-branch',
+      retrieving: 'database',
+      generating: 'sparkles'
+    };
+    const THINKING_WORDS = ['Mulling...', 'Crystallizing...', 'Fathoming...', 'Synthesizing context...'];
+
+    // State
+    let activeChip = null;
+    let stage = 'idle';
+    let thinkingIdx = 0;
+    let thinkingInterval = null;
+    let stageTimeouts = [];
+    let busy = false;
+
+    // DOM Elements
+    const chatContainer = document.getElementById('chatContainer');
+    const emptyState = document.getElementById('emptyState');
+    const messagesList = document.getElementById('messagesList');
+    const scrollAnchor = document.getElementById('scrollAnchor');
+    const queryInput = document.getElementById('queryInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const chipBtns = document.querySelectorAll('.chip-btn');
+
+    // Initialize Lucide icons
+    lucide.createIcons();
+
+    // Auto-expand textarea & enable/disable send button
+    queryInput.addEventListener('input', () => {
+      queryInput.style.height = 'auto';
+      queryInput.style.height = Math.min(queryInput.scrollHeight, 128) + 'px';
+      sendBtn.disabled = !queryInput.value.trim() || busy;
+    });
+
+    queryInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        handleSubmit();
+      }
+    });
+
+    sendBtn.addEventListener('click', handleSubmit);
+
+    // Chip click handlers
+    chipBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const chipKey = btn.getAttribute('data-chip');
+        if (activeChip === chipKey) {
+          activeChip = null;
+          btn.classList.remove('active');
+        } else {
+          chipBtns.forEach(b => {
+            b.classList.remove('active');
+          });
+          activeChip = chipKey;
+          btn.classList.add('active');
+        }
+      });
+    });
+
+    function scrollToBottom() {
+      scrollAnchor.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+
+    // Pipeline tracker update
+    function setPipelineStage(newStage) {
+      stage = newStage;
+      const activeIdx = stage === 'idle' ? -1 : STEPS.indexOf(stage);
+
+      STEPS.forEach((s, idx) => {
+        const item = document.querySelector(`.step-item[data-step="${s}"]`);
+        const iconWrap = item.querySelector('.step-icon-wrap');
+        const label = item.querySelector('.step-label');
+        const isDone = activeIdx > idx;
+        const isActive = activeIdx === idx;
+
+        // Reset classes
+        iconWrap.className = 'step-icon-wrap flex h-8 w-8 items-center justify-center rounded-xl border transition-colors';
+        label.className = 'step-label font-mono text-[10px] uppercase tracking-wider';
+
+        if (isDone) {
+          iconWrap.classList.add('border-emerald-300', 'bg-emerald-50', 'text-emerald-600');
+          iconWrap.innerHTML = `<i data-lucide="check" class="h-3.5 w-3.5 text-emerald-600"></i>`;
+          label.classList.add('text-emerald-600');
+        } else if (isActive) {
+          iconWrap.classList.add('animate-pulse', 'border-blue-400', 'bg-blue-50', 'ring-1', 'ring-blue-200', 'text-blue-600');
+          iconWrap.innerHTML = `<i data-lucide="${STEP_ICONS[s]}" class="h-3.5 w-3.5 text-blue-600"></i>`;
+          label.classList.add('text-blue-600');
+        } else {
+          iconWrap.innerHTML = `<i data-lucide="${STEP_ICONS[s]}" class="h-3.5 w-3.5"></i>`;
+        }
+      });
+
+      // Lines between steps
+      for (let i = 0; i < 3; i++) {
+        const line = document.querySelector(`.step-line[data-line="${i}"]`);
+        if (line) {
+          if (activeIdx > i) {
+            line.className = 'step-line h-px flex-1 bg-emerald-300 transition-colors';
+          } else {
+            line.className = 'step-line h-px flex-1 transition-colors';
+          }
+        }
+      }
+
+      lucide.createIcons();
+    }
+
+    // Markdown Parser (paragraphs, bold, code block, inline code)
+    function escapeHtml(text) {
+      return text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    }
+
+    function renderMarkdown(content) {
+      let codeBlocks = [];
+      // Replace code blocks first
+      let processed = content.replace(/```(\w*)\n?([\s\S]*?)```/g, (match, lang, code) => {
+        const idx = codeBlocks.length;
+        codeBlocks.push({ lang: lang || 'text', code: code.trim() });
+        return `__CODE_BLOCK_${idx}__`;
+      });
+
+      // Paragraphs
+      let paragraphs = processed.split(/\n{2,}/).filter(p => p.trim().length > 0);
+
+      let html = paragraphs.map(p => {
+        if (p.startsWith('__CODE_BLOCK_')) {
+          const idx = parseInt(p.replace('__CODE_BLOCK_', '').replace('__', ''));
+          const block = codeBlocks[idx];
+          return `
+            <div class="code-block my-3 overflow-hidden rounded-xl border">
+              <div class="code-top flex items-center justify-between border-b px-3 py-1.5">
+                <span class="font-mono text-[11px] uppercase tracking-wide">${escapeHtml(block.lang)}</span>
+                <button onclick="copyCode(this, \`${encodeURIComponent(block.code)}\`)" class="copy-button flex items-center gap-1 rounded px-1.5 py-1 font-mono text-[11px] transition-colors">
+                  <i data-lucide="copy" class="h-3 w-3"></i>
+                  <span>copy</span>
+                </button>
+              </div>
+              <pre class="overflow-x-auto px-3 py-2.5"><code class="font-mono text-[13px] leading-relaxed">${escapeHtml(block.code)}</code></pre>
+            </div>
+          `;
+        }
+
+        // Inline Bold & Inline Code & line breaks
+        let inlined = escapeHtml(p)
+          .replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-slate-900">$1</strong>')
+          .replace(/`([^`]+)`/g, '<code class="rounded bg-blue-50 px-1 py-0.5 font-mono text-[13px] text-blue-700">$1</code>')
+          .replace(/\n/g, '<br/>');
+
+        return `<p class="mb-2 whitespace-pre-wrap leading-relaxed last:mb-0">${inlined}</p>`;
+      }).join('');
+
+      return html;
+    }
+
+    // Global copy code helper
+    window.copyCode = function (btn, encodedCode) {
+      copyText(btn, decodeURIComponent(encodedCode));
+    };
+
+    function copyText(btn, text) {
+      navigator.clipboard.writeText(text).then(() => {
+        btn.innerHTML = `<i data-lucide="check-check" class="h-3 w-3 text-emerald-400"></i><span class="text-emerald-400">copied</span>`;
+        lucide.createIcons();
+        setTimeout(() => {
+          btn.innerHTML = `<i data-lucide="copy" class="h-3 w-3"></i><span>copy</span>`;
+          lucide.createIcons();
+        }, 1500);
+      });
+    };
+
+    function startThinkingAnimation(elId) {
+      thinkingIdx = 0;
+      const label = document.getElementById(`thinking-label-${elId}`);
+      if (label) label.textContent = THINKING_WORDS[0];
+      thinkingInterval = setInterval(() => {
+        thinkingIdx = (thinkingIdx + 1) % THINKING_WORDS.length;
+        const target = document.getElementById(`thinking-label-${elId}`);
+        if (target) target.textContent = THINKING_WORDS[thinkingIdx];
+      }, 700);
+    }
+
+    function stopThinkingAnimation() {
+      if (thinkingInterval) {
+        clearInterval(thinkingInterval);
+        thinkingInterval = null;
+      }
+    }
+
+    async function handleSubmit() {
+      const raw = queryInput.value.trim();
+      if (!raw || busy) return;
+
+      busy = true;
+      sendBtn.disabled = true;
+      queryInput.disabled = true;
+
+      // Prefix if chip is selected
+      const activeChipEl = document.querySelector(`.chip-btn[data-chip="${activeChip}"]`);
+      const prefix = activeChipEl ? activeChipEl.getAttribute('data-prefix') : '';
+      const query = prefix ? prefix + raw : raw;
+
+      emptyState.classList.add('hidden');
+      messagesList.classList.remove('hidden');
+
+      // 1. Add User Message
+      const userBubble = document.createElement('div');
+      userBubble.className = "message-query message-enter ml-auto max-w-3xl rounded-2xl px-4 py-3 text-sm";
+      userBubble.innerHTML = `<div class="font-mono text-[10px] uppercase tracking-[.18em] text-blue-700">You asked</div><div class="mt-1">${escapeHtml(raw)}</div><div class="mt-3 flex justify-end"><button class="copy-button rounded px-1.5 py-1 text-slate-500 hover:bg-blue-100 hover:text-blue-700" aria-label="Copy query"><i data-lucide="copy" class="h-3.5 w-3.5"></i><span class="ml-1 font-mono text-[10px]">copy</span></button></div>`;
+      userBubble.querySelector('.copy-button').addEventListener('click', (event) => copyText(event.currentTarget, raw));
+      messagesList.appendChild(userBubble);
+
+      // 2. Add Assistant Message Container (Pending)
+      const assistantId = 'ast-' + Date.now();
+      const assistantBubble = document.createElement('div');
+      assistantBubble.id = assistantId;
+      assistantBubble.className = "message-answer message-enter max-w-3xl rounded-2xl border px-5 py-5 text-sm";
+      assistantBubble.innerHTML = `
+        <div id="pending-${assistantId}" class="flex items-center gap-2 font-mono text-xs text-blue-600">
+          <i data-lucide="loader-2" class="h-3.5 w-3.5 animate-spin"></i>
+          <span id="thinking-label-${assistantId}">Mulling...</span>
+        </div>
+        <div class="answer-head mb-3 font-mono text-[10px] uppercase tracking-[.18em]">Atlas answer</div>
+        <div id="content-${assistantId}" class="content hidden"></div>
+        <div class="mt-4 flex justify-end"><button id="copy-answer-${assistantId}" class="copy-button rounded-lg px-2 py-1.5" aria-label="Copy answer"><i data-lucide="copy" class="h-3.5 w-3.5"></i><span class="ml-1 font-mono text-[10px]">copy answer</span></button></div>
+        <div id="sources-${assistantId}" class="mt-4 hidden flex-wrap gap-1.5 border-t pt-3 message-divider"></div>
+        <div id="meta-${assistantId}" class="meta-row mt-3 hidden flex-wrap items-center gap-2 border-t pt-3 font-mono text-[10px] message-divider"></div>
+      `;
+      messagesList.appendChild(assistantBubble);
+      assistantBubble.querySelector(`#copy-answer-${assistantId}`).addEventListener('click', (event) => copyText(event.currentTarget, assistantBubble.querySelector(`#content-${assistantId}`).innerText));
+      lucide.createIcons();
+      scrollToBottom();
+
+      queryInput.value = '';
+      queryInput.style.height = 'auto';
+
+      setPipelineStage('analyzing');
+      startThinkingAnimation(assistantId);
+
+      stageTimeouts.push(setTimeout(() => { if (stage === 'analyzing') setPipelineStage('routing'); }, 550));
+      stageTimeouts.push(setTimeout(() => { if (stage === 'analyzing' || stage === 'routing') setPipelineStage('retrieving'); }, 1200));
+
+      const enterGenerating = () => {
+        stageTimeouts.forEach(clearTimeout);
+        stageTimeouts = [];
+        stopThinkingAnimation();
+        setPipelineStage('generating');
+        const p = document.getElementById(`pending-${assistantId}`);
+        const c = document.getElementById(`content-${assistantId}`);
+        if (p) p.classList.add('hidden');
+        if (c) c.classList.remove('hidden');
+      };
+
+      try {
+        const res = await fetch(`${API_URL}/query`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: query, top_k: 6 }),
+        });
+
+        if (!res.ok || !res.body) {
+          throw new Error(`Request failed (${res.status})`);
+        }
+
+        const contentType = res.headers.get('content-type') || '';
+
+        if (contentType.includes('application/json')) {
+          const data = await res.json();
+          enterGenerating();
+          renderFinalData(assistantId, data.answer || '', data);
+          setPipelineStage('idle');
+          return;
+        }
+
+        // SSE Streaming
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let started = false;
+        let accumulatedContent = '';
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const parts = buffer.split('\n\n');
+          buffer = parts.pop() ?? '';
+
+          for (const part of parts) {
+            const line = part.trim();
+            if (!line.startsWith('data:')) continue;
+            const rawData = line.slice(5).trim();
+            if (rawData === '[DONE]') continue;
+
+            let evt;
+            try { evt = JSON.parse(rawData); } catch { continue; }
+
+            if (!started) {
+              started = true;
+              enterGenerating();
+            }
+
+            const contentDiv = document.getElementById(`content-${assistantId}`);
+            if (typeof evt.delta === 'string') {
+              accumulatedContent += evt.delta;
+              contentDiv.innerHTML = renderMarkdown(accumulatedContent) + '<span class="cursor-blink"></span>';
+              lucide.createIcons();
+              scrollToBottom();
+            } else if (typeof evt.error === 'string') {
+              renderError(assistantId, evt.error);
+            } else if (typeof evt.answer === 'string') {
+              renderFinalData(assistantId, evt.answer || accumulatedContent, evt);
+            }
+          }
+        }
+      } catch (err) {
+        stageTimeouts.forEach(clearTimeout);
+        stopThinkingAnimation();
+        renderError(assistantId, err.message || 'Connection to the retrieval backend failed.');
+      } finally {
+        busy = false;
+        queryInput.disabled = false;
+        sendBtn.disabled = !queryInput.value.trim();
+        queryInput.focus();
+        setPipelineStage('idle');
+      }
+    }
+
+    function renderError(assistantId, errorMsg) {
+      const p = document.getElementById(`pending-${assistantId}`);
+      if (p) p.classList.add('hidden');
+      const c = document.getElementById(`content-${assistantId}`);
+      if (c) {
+        c.classList.remove('hidden');
+        c.innerHTML = `
+          <div class="flex items-center gap-2 text-amber-400">
+            <i data-lucide="alert-triangle" class="h-4 w-4 shrink-0"></i>
+            <span class="font-mono text-xs">${escapeHtml(errorMsg)}</span>
+          </div>
+        `;
+        lucide.createIcons();
+      }
+    }
+
+    function renderFinalData(assistantId, answer, meta) {
+      const contentDiv = document.getElementById(`content-${assistantId}`);
+      if (contentDiv) {
+        contentDiv.innerHTML = renderMarkdown(answer);
+        lucide.createIcons();
+      }
+
+      // Render Sources
+      const visibleSources = (meta.sources || []).filter(source => source.source && source.source !== 'corpus');
+      if (visibleSources.length > 0) {
+        const sourcesDiv = document.getElementById(`sources-${assistantId}`);
+        sourcesDiv.classList.remove('hidden');
+        sourcesDiv.innerHTML = visibleSources.map((s) => {
+          const score = typeof s.score === 'number' ? ` · ${s.score.toFixed(2)}` : '';
+          return `<span class="source-pill rounded-lg border px-2 py-1 font-mono text-[10px]" title="${s.chunk_id || ''}">${escapeHtml(s.source || 'corpus')}${score}</span>`;
+        }).join('');
+      }
+
+      // Render Metadata / Latency / Routing Badge
+      const metaDiv = document.getElementById(`meta-${assistantId}`);
+      const routing = meta.routing_metadata || meta.routing;
+      const latency = meta.latency_breakdown || meta.latency;
+      let totalLat = null;
+      if (latency) {
+        const vals = Object.values(latency).filter(v => typeof v === 'number');
+        if (vals.length) totalLat = vals.reduce((a, b) => a + b, 0);
+      }
+
+      if (routing?.path || totalLat !== null || meta.degraded) {
+        metaDiv.classList.remove('hidden');
+        let html = '';
+
+        if (routing && routing.path) {
+          const isDeep = routing.path.toLowerCase().includes('deep');
+          const conf = typeof routing.confidence === 'number' ? ` · ${(routing.confidence * 100).toFixed(0)}%` : '';
+          html += `<span class="rounded-lg border px-2 py-1 font-mono text-[10px] uppercase tracking-wide ${isDeep ? 'route-deep' : 'route-fast'}">${escapeHtml(routing.path)}${conf}</span>`;
+        }
+
+        if (totalLat !== null) {
+          html += `<span>${formatLatency(totalLat)}</span>`;
+        }
+
+        if (meta.degraded) {
+          html += `<span class="flex items-center gap-1 text-amber-500"><i data-lucide="alert-triangle" class="h-3 w-3"></i> degraded</span>`;
+        }
+
+        metaDiv.innerHTML = html;
+        lucide.createIcons();
+      }
+
+      scrollToBottom();
+    }
+
+    function formatLatency(totalMilliseconds) {
+      return `${(totalMilliseconds / 1000).toFixed(1)}s`;
+    }
+  </script>
+</body>
+
+</html>
