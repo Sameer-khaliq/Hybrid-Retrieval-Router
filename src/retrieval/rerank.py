@@ -52,12 +52,9 @@ def preload_reranker() -> None:
     except Exception:
         pass
 
-
 def _candidate_text(candidate: dict[str, Any]) -> str:
-    text = candidate.get("text")
-    if text is None:
-        text = candidate.get("content", "")
-    # Trim to 400 chars: Sufficient for MiniLM-L6 cross-attention & speeds up tokenization 2x
+    payload = candidate.get("payload") or {}
+    text = payload.get("text") or candidate.get("text") or candidate.get("content", "")
     return str(text)[:400]
 
 
@@ -72,8 +69,9 @@ def rerank(
     if not candidates:
         return []
 
-    # Limit pool to 10 chunks max
-    pool = candidates[:10]
+    pool_size = max(top_k or 0, settings.rerank_candidate_pool)
+    pool = candidates[:pool_size]
+
     pairs = [(query, _candidate_text(c)) for c in pool]
 
     model = _get_reranker()
@@ -113,19 +111,25 @@ def rerank(
     return result
 
 
+_rerank_semaphore = asyncio.Semaphore(1)
+
 async def rerank_async(
     query: str,
     candidates: list[dict[str, Any]],
     top_k: int | None = None,
     trace_id: str = "rerank",
 ) -> list[dict[str, Any]]:
-    try:
-        # Hard 2.5s timeout: CPU hanging prevention
-        return await asyncio.wait_for(
-            asyncio.to_thread(rerank, query, candidates, top_k, trace_id),
-            timeout=2.5,
-        )
-    except asyncio.TimeoutError:
-        logger = get_logger(trace_id=trace_id)
-        logger.warning("rerank_timeout_fallback", stage="rerank", message="Exceeded 2.5s cap, skipping rerank")
-        return candidates[:top_k] if top_k is not None else candidates
+    async with _rerank_semaphore:
+        try:
+            return await asyncio.wait_for(
+                asyncio.to_thread(rerank, query, candidates, top_k, trace_id),
+                timeout=2.5,
+            )
+        except asyncio.TimeoutError:
+            logger = get_logger(trace_id=trace_id)
+            logger.warning(
+                "rerank_timeout_fallback",
+                stage="rerank",
+                message="Exceeded 2.5s cap, skipping rerank",
+            )
+            return candidates[:top_k] if top_k is not None else candidates

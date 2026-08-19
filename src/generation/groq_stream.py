@@ -86,26 +86,13 @@ _GENERATION_SYSTEM_PROMPT = (
 
 
 def _build_context_block(chunks: list[dict[str, Any]]) -> str:
-    """
-    Assemble retrieved/reranked (+ optional Tavily web) chunks into a
-    single context string for the generation prompt. Each chunk should
-    carry a "source" tag ("corpus" | "web") from Step 19/20's tagging -
-    defaults to "corpus" if absent so this doesn't hard-fail on chunks
-    built before that tagging was wired in (e.g. direct unit tests).
-
-    Capped to settings.generation_max_context_chunks chunks, each
-    truncated to settings.generation_max_chunk_chars characters. This
-    is deliberately generation-only truncation - the caller's full
-    `chunks` list (e.g. all 15 reranked deep-path candidates) is still
-    used as-is for `sources` in the API response and for NFR-5's Recall
-    measurement; only what actually goes into the Groq prompt shrinks,
-    to stay inside the 8K TPM/minute free-tier ceiling.
-    """
+    
     limited_chunks = chunks[: settings.generation_max_context_chunks]
     lines = []
     for i, chunk in enumerate(limited_chunks, start=1):
-        source = chunk.get("source", "corpus")
-        text = chunk.get("text") or chunk.get("content", "")
+        payload = chunk.get("payload") or {}
+        source = payload.get("source") or chunk.get("source", "corpus")
+        text = payload.get("text") or chunk.get("text") or chunk.get("content", "")
         text = str(text)[: settings.generation_max_chunk_chars]
         lines.append(f"[{i}] (source: {source}) {text}")
     return "\n\n".join(lines)
