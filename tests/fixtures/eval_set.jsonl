@@ -1,3 +1,3 @@
-{"query": "What is a dividend?", "relevant_chunk_ids": [3203592332577065735, 8595922138929585732], "expected_routing_path": "fast"}
-{"query": "Compare the tax treatment of dividends versus capital gains for a retirement account.", "relevant_chunk_ids": [7978603511910230595, 2045131580894517462, 4588586416387709604], "expected_routing_path": "deep"}
-{"query": "What is an ETF?", "relevant_chunk_ids": [5166554514385429772, 2060701862820442319], "expected_routing_path": "fast"}
+{"query": "What is a dividend?", "relevant_chunk_ids": [3203592332577065735], "expected_routing_path": "fast"}
+{"query": "Compare the tax treatment of dividends versus capital gains for a retirement account.", "relevant_chunk_ids": [7978603511910230595], "expected_routing_path": "deep"}
+{"query": "What is an ETF?", "relevant_chunk_ids": [5166554514385429772], "expected_routing_path": "fast"}

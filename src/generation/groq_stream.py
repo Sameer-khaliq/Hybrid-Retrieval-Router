@@ -27,16 +27,28 @@ the real generation call IS the reachability check, so NFR-4's
 per-query API-call budget isn't spent on a call that does nothing but
 check if another call would work.
 
-CONCURRENCY CAP (Root cause #2 fix - deep-path 429s): once the
-reranker's event-loop-blocking bug (rerank.py) is fixed, deep-path
-requests are no longer artificially serialized by a starved event
-loop, so they can genuinely fire concurrently - which is exactly what
-was pushing gpt-oss-120b past Groq's free-tier TPM/RPM ceiling.
-_groq_deep_semaphore below caps concurrent in-flight groq_deep_model
-calls to settings.groq_deep_max_concurrency, so the app respects the
-limit proactively instead of firing-then-backing-off on every 429.
-Only the deep model is capped - fast-path (which shares gpt-oss-20b
-with the Layer-1 router) hasn't shown 429s and isn't capped here.
+CONCURRENCY CAP (429 fix, part 1): once the reranker's event-loop-
+blocking bug (rerank.py) is fixed, deep-path requests are no longer
+artificially serialized by a starved event loop, so they can
+genuinely fire concurrently. _groq_deep_semaphore below caps
+concurrent in-flight groq_deep_model calls to
+settings.groq_deep_max_concurrency as a safety net. Only the deep
+model is capped - fast-path (which shares gpt-oss-20b with the
+Layer-1 router) hasn't shown 429s and isn't capped here.
+
+CONTEXT-SIZE CAP (429 fix, part 2 - the actual root cause): Groq's
+free-tier TPM ceiling for both gpt-oss-120b and gpt-oss-20b is 8K
+tokens/minute. A full 15-chunk deep-path prompt runs ~4-6K tokens on
+its own, so 1-2 back-to-back deep-path requests exhaust the per-minute
+budget regardless of concurrency - the semaphore above limits how many
+requests are in flight at once, but does nothing about how large each
+one is. _build_context_block() below caps the number of chunks it puts
+in the prompt (settings.generation_max_context_chunks) and truncates
+each chunk's text (settings.generation_max_chunk_chars). This is
+generation-context-only: the reranker still scores and returns the
+full settings.rerank_top_k (15) candidates for deep-path, so NFR-5
+(Recall@10) is unaffected - only what actually gets sent to Groq
+shrinks.
 """
 
 from __future__ import annotations
@@ -80,11 +92,21 @@ def _build_context_block(chunks: list[dict[str, Any]]) -> str:
     carry a "source" tag ("corpus" | "web") from Step 19/20's tagging -
     defaults to "corpus" if absent so this doesn't hard-fail on chunks
     built before that tagging was wired in (e.g. direct unit tests).
+
+    Capped to settings.generation_max_context_chunks chunks, each
+    truncated to settings.generation_max_chunk_chars characters. This
+    is deliberately generation-only truncation - the caller's full
+    `chunks` list (e.g. all 15 reranked deep-path candidates) is still
+    used as-is for `sources` in the API response and for NFR-5's Recall
+    measurement; only what actually goes into the Groq prompt shrinks,
+    to stay inside the 8K TPM/minute free-tier ceiling.
     """
+    limited_chunks = chunks[: settings.generation_max_context_chunks]
     lines = []
-    for i, chunk in enumerate(chunks, start=1):
+    for i, chunk in enumerate(limited_chunks, start=1):
         source = chunk.get("source", "corpus")
         text = chunk.get("text") or chunk.get("content", "")
+        text = str(text)[: settings.generation_max_chunk_chars]
         lines.append(f"[{i}] (source: {source}) {text}")
     return "\n\n".join(lines)
 
@@ -131,6 +153,13 @@ async def generate_streaming(
     uncaught exception reaching the client).
     """
     logger = get_logger(trace_id=trace_id)
+    if len(chunks) > settings.generation_max_context_chunks:
+        logger.info(
+            "generation_context_truncated",
+            stage="generation",
+            retrieved_chunks=len(chunks),
+            chunks_sent_to_llm=settings.generation_max_context_chunks,
+        )
     context_block = _build_context_block(chunks)
     model = _model_for_path(path)
     degraded = False

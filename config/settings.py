@@ -80,14 +80,28 @@ class Settings(BaseSettings):
 
     # ---- Reranker load behavior (perf fix — deep-path latency bug) ----------
     # When True, src/retrieval/rerank.py loads the CrossEncoder with
-    # HF_HUB_OFFLINE=1 whenever the model is already present in the local
-    # HF cache, skipping the network HEAD-check the Hub otherwise does on
-    # every process's first load. Falls back to one online fetch
-    # automatically if the model isn't cached yet, then locks back to
-    # offline. No manual toggling needed across restarts, as long as the
-    # HF cache dir persists (mount it as a Docker volume in production —
-    # default is ~/.cache/huggingface inside the container).
+    # local_files_only=True whenever the model is already present in the
+    # local HF cache, skipping the network HEAD-check the Hub otherwise
+    # does on every load. Falls back to one online fetch automatically
+    # if the model isn't cached yet, then the local_files_only=True path
+    # succeeds on every subsequent load. No manual toggling needed
+    # across restarts, as long as the HF cache dir persists (mount it as
+    # a Docker volume in production — default is ~/.cache/huggingface
+    # inside the container).
     reranker_prefer_offline: bool = Field(default=True)
+
+    # ---- Reranker CPU performance tuning (perf fix follow-up) ---------------
+    # torch defaults to using every available core, which for a model
+    # this small (~22M params) adds thread-coordination overhead that
+    # outweighs the parallelism benefit - measured contributor to the
+    # 4-6s CPU inference times seen even with the model fully warm.
+    reranker_cpu_threads: int = Field(default=4)
+    # Token-level truncation passed straight to CrossEncoder(...).
+    reranker_max_length: int = Field(default=256)
+    # Character-level truncation applied before tokenization, so a
+    # pathologically long chunk doesn't dominate CPU cost for no
+    # accuracy benefit past what reranker_max_length would use anyway.
+    reranker_max_candidate_chars: int = Field(default=800)
 
     # ---- Fast-path rerank behavior (FR-6, Step 19) --------------------------
     # "skip"    -> fast-path never calls the reranker, just returns
@@ -107,7 +121,15 @@ class Settings(BaseSettings):
     weight_clause_count: float = Field(default=0.20)
 
     # ---- LLM-router fallback (FR-13, addendum #2) ---------------------------
-    router_timeout_ms: int = Field(default=400)
+    # Originally 400ms (addendum #2's reasoning: p95=350ms NFR-1 + margin).
+    # Bumped to 800ms after live measurement showed the router call
+    # consistently exceeding 400ms under real Groq round-trip conditions
+    # (network + model latency), causing every mid-band query to hit
+    # timeout-fallback regardless of actual complexity - not a bug, just
+    # the configured ceiling being tighter than what's achievable in
+    # practice. Re-validate against Groq's actual latency once the TPM/429
+    # fixes are in and traffic is no longer artificially congested.
+    router_timeout_ms: int = Field(default=800)
     groq_router_model: str = Field(default="openai/gpt-oss-20b")
 
     # ---- Groq generation models (fast/deep + FR-27 mid-tier) ----------------
@@ -132,6 +154,18 @@ class Settings(BaseSettings):
     # src/generation/groq_stream.py. Tune against Groq's console limits
     # for gpt-oss-120b specifically, not guessed.
     groq_deep_max_concurrency: int = Field(default=2)
+
+    # ---- Generation context sizing (TPM-budget fix, root cause #2 revised) --
+    # Groq's free-tier TPM ceiling for both gpt-oss-120b and gpt-oss-20b
+    # is 8K tokens/minute. A full 15-chunk deep-path prompt runs ~4-6K
+    # tokens on its own - 1-2 back-to-back deep-path requests exhaust the
+    # budget regardless of concurrency. These caps apply ONLY to what
+    # src/generation/groq_stream.py puts in the Groq prompt - the
+    # reranker still scores and returns the full rerank_top_k (15)
+    # candidates for deep-path, so NFR-5 (Recall@10) measurement is
+    # unaffected; only the generation call's token footprint shrinks.
+    generation_max_context_chunks: int = Field(default=5)
+    generation_max_chunk_chars: int = Field(default=700)
 
     # ---- Tavily fallback (FR-9) ---------------------------------------------
     tavily_confidence_floor: float = Field(default=0.02)
