@@ -26,6 +26,7 @@ running on the same thread).
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 from typing import Any
 
@@ -41,10 +42,66 @@ _reranker: CrossEncoder | None = None
 
 
 def _get_reranker() -> CrossEncoder:
+    """Lazy-load the CrossEncoder singleton — but see preload_reranker()
+    below, which should be called from app startup so this branch never
+    actually runs during a live request in practice.
+
+    Root cause of the 11-14s per-deep-request latency: without
+    HF_HUB_OFFLINE set, sentence-transformers/huggingface_hub issues a
+    HEAD request to the Hub on every CrossEncoder(...) instantiation to
+    check for a newer revision, even when the model is already cached
+    locally. Combined with this being called lazily (previously: on
+    first use per code path, easy to accidentally re-trigger), that
+    network round-trip was eating the bulk of the "deep path" latency.
+
+    Fix: prefer fully-offline loading (no Hub round-trip at all) once
+    the model is cached. If it isn't cached yet (first-ever run in a
+    fresh environment/container), fall back to exactly one online
+    fetch to populate the cache, then lock back to offline for the
+    rest of this process's lifetime.
+    """
     global _reranker
-    if _reranker is None:
+    if _reranker is not None:
+        return _reranker
+
+    if not settings.reranker_prefer_offline:
         _reranker = CrossEncoder(settings.reranker_model)
+        return _reranker
+
+    prior_offline_flag = os.environ.get("HF_HUB_OFFLINE")
+    os.environ["HF_HUB_OFFLINE"] = "1"
+    try:
+        _reranker = CrossEncoder(settings.reranker_model)
+    except Exception:
+        # Not cached locally yet — allow exactly one online fetch to
+        # populate the cache, then re-lock offline for every load after
+        # this (including future preload_reranker() calls in this
+        # process, and future processes once the cache dir persists).
+        os.environ["HF_HUB_OFFLINE"] = "0"
+        _reranker = CrossEncoder(settings.reranker_model)
+        os.environ["HF_HUB_OFFLINE"] = "1"
+    finally:
+        if prior_offline_flag is None:
+            # leave HF_HUB_OFFLINE=1 set — subsequent loads elsewhere in
+            # this process (e.g. re-instantiation in tests) stay offline
+            pass
+        elif prior_offline_flag != os.environ.get("HF_HUB_OFFLINE"):
+            os.environ["HF_HUB_OFFLINE"] = prior_offline_flag
+
     return _reranker
+
+
+def preload_reranker() -> None:
+    """Eagerly load the CrossEncoder singleton. Call this once from app
+    startup (see src/api/main.py's lifespan, alongside the BM25 index
+    preload) so:
+
+      1. The first live deep-path request never pays model-load latency.
+      2. The offline/online-fallback logic above only ever runs once, at
+         startup, instead of racing multiple concurrent first requests
+         against each other (each thinking _reranker is still None).
+    """
+    _get_reranker()
 
 
 def _candidate_text(candidate: dict[str, Any]) -> str:
