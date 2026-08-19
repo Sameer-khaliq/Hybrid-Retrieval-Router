@@ -78,6 +78,17 @@ class Settings(BaseSettings):
     # ---- Cross-encoder reranker model (FR-10, Step 18) ---------------------
     reranker_model: str = Field(default="cross-encoder/ms-marco-MiniLM-L-6-v2")
 
+    # ---- Reranker load behavior (perf fix — deep-path latency bug) ----------
+    # When True, src/retrieval/rerank.py loads the CrossEncoder with
+    # HF_HUB_OFFLINE=1 whenever the model is already present in the local
+    # HF cache, skipping the network HEAD-check the Hub otherwise does on
+    # every process's first load. Falls back to one online fetch
+    # automatically if the model isn't cached yet, then locks back to
+    # offline. No manual toggling needed across restarts, as long as the
+    # HF cache dir persists (mount it as a Docker volume in production —
+    # default is ~/.cache/huggingface inside the container).
+    reranker_prefer_offline: bool = Field(default=True)
+
     # ---- Fast-path rerank behavior (FR-6, Step 19) --------------------------
     # "skip"    -> fast-path never calls the reranker, just returns
     #              top rerank_top_k_fast fused-order candidates
@@ -111,6 +122,16 @@ class Settings(BaseSettings):
     # available-model list changes again, rather than defaulting this to
     # a duplicate of an existing tier.
     groq_mid_model_b: str = Field(default="")
+
+    # ---- Groq deep-path concurrency cap (429 fix, Root cause #2) ------------
+    # Client-side semaphore limiting concurrent in-flight groq_deep_model
+    # (gpt-oss-120b) calls, so the app respects Groq's free-tier TPM/RPM
+    # ceiling proactively instead of hitting 429 and backing off
+    # reactively (NFR-8's retry/backoff still applies as a safety net,
+    # this just reduces how often it needs to fire). Wired in
+    # src/generation/groq_stream.py. Tune against Groq's console limits
+    # for gpt-oss-120b specifically, not guessed.
+    groq_deep_max_concurrency: int = Field(default=2)
 
     # ---- Tavily fallback (FR-9) ---------------------------------------------
     tavily_confidence_floor: float = Field(default=0.02)
