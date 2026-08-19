@@ -19,7 +19,6 @@ import json
 import logging
 from unittest.mock import AsyncMock, patch
 
-import pytest
 from fastapi.testclient import TestClient
 
 from src.api.main import app
@@ -78,24 +77,26 @@ async def _fake_generate_streaming(*args, **kwargs):
 
 
 def test_worst_case_api_call_count_is_four():
-    with patch("src.pipeline.run_query.run_prefilter", return_value=None):
-        with patch(
+    with (
+        patch("src.pipeline.run_query.run_prefilter", return_value=None),
+        patch(
             "src.pipeline.run_query.retrieve_and_route_concurrent",
             new=AsyncMock(return_value=WORST_CASE_RETRIEVAL_AND_ROUTING),
-        ):
-            with patch("src.pipeline.run_query.rrf_fuse", return_value=WORST_CASE_FUSED):
-                with patch(
-                    "src.pipeline.run_query.apply_conditional_rerank",
-                    new=AsyncMock(return_value=WORST_CASE_RERANKED),
-                ):
-                    with patch(
-                        "src.pipeline.run_query.apply_tavily_fallback",
-                        new=AsyncMock(return_value=WORST_CASE_TAVILY_RESULT),
-                    ):
-                        with patch("src.api.main.generate_streaming", new=_fake_generate_streaming):
-                            response = client.post(
-                                "/query", json={"query": "What are today's mortgage rates compared to last year?"}
-                            )
+        ),
+        patch("src.pipeline.run_query.rrf_fuse", return_value=WORST_CASE_FUSED),
+        patch(
+            "src.pipeline.run_query.apply_conditional_rerank",
+            new=AsyncMock(return_value=WORST_CASE_RERANKED),
+        ),
+        patch(
+            "src.pipeline.run_query.apply_tavily_fallback",
+            new=AsyncMock(return_value=WORST_CASE_TAVILY_RESULT),
+        ),
+        patch("src.api.main.generate_streaming", new=_fake_generate_streaming),
+    ):
+        response = client.post(
+            "/query", json={"query": "What are today's mortgage rates compared to last year?"}
+        )
 
     assert response.status_code == 200
     parsed = _parse_sse(response.text)
@@ -106,22 +107,24 @@ def test_worst_case_api_call_count_is_four():
 
 
 def test_all_nfr11_fields_present_in_final_response():
-    with patch("src.pipeline.run_query.run_prefilter", return_value=None):
-        with patch(
+    with (
+        patch("src.pipeline.run_query.run_prefilter", return_value=None),
+        patch(
             "src.pipeline.run_query.retrieve_and_route_concurrent",
             new=AsyncMock(return_value=WORST_CASE_RETRIEVAL_AND_ROUTING),
-        ):
-            with patch("src.pipeline.run_query.rrf_fuse", return_value=WORST_CASE_FUSED):
-                with patch(
-                    "src.pipeline.run_query.apply_conditional_rerank",
-                    new=AsyncMock(return_value=WORST_CASE_RERANKED),
-                ):
-                    with patch(
-                        "src.pipeline.run_query.apply_tavily_fallback",
-                        new=AsyncMock(return_value=WORST_CASE_TAVILY_RESULT),
-                    ):
-                        with patch("src.api.main.generate_streaming", new=_fake_generate_streaming):
-                            response = client.post("/query", json={"query": "some query"})
+        ),
+        patch("src.pipeline.run_query.rrf_fuse", return_value=WORST_CASE_FUSED),
+        patch(
+            "src.pipeline.run_query.apply_conditional_rerank",
+            new=AsyncMock(return_value=WORST_CASE_RERANKED),
+        ),
+        patch(
+            "src.pipeline.run_query.apply_tavily_fallback",
+            new=AsyncMock(return_value=WORST_CASE_TAVILY_RESULT),
+        ),
+        patch("src.api.main.generate_streaming", new=_fake_generate_streaming),
+    ):
+        response = client.post("/query", json={"query": "some query"})
 
     final = _parse_sse(response.text)[-1]
 
@@ -140,23 +143,25 @@ def test_all_nfr11_fields_present_in_final_response():
 
 def test_trace_id_consistent_across_log_lines(caplog):
     """FR-20: every log line for one query carries the same trace_id."""
-    with caplog.at_level(logging.INFO, logger="hybrid_retrieval"):
-        with patch("src.pipeline.run_query.run_prefilter", return_value=None):
-            with patch(
-                "src.pipeline.run_query.retrieve_and_route_concurrent",
-                new=AsyncMock(return_value=WORST_CASE_RETRIEVAL_AND_ROUTING),
-            ):
-                with patch("src.pipeline.run_query.rrf_fuse", return_value=WORST_CASE_FUSED):
-                    with patch(
-                        "src.pipeline.run_query.apply_conditional_rerank",
-                        new=AsyncMock(return_value=WORST_CASE_RERANKED),
-                    ):
-                        with patch(
-                            "src.pipeline.run_query.apply_tavily_fallback",
-                            new=AsyncMock(return_value=WORST_CASE_TAVILY_RESULT),
-                        ):
-                            with patch("src.api.main.generate_streaming", new=_fake_generate_streaming):
-                                response = client.post("/query", json={"query": "some query"})
+    with (
+        caplog.at_level(logging.INFO, logger="hybrid_retrieval"),
+        patch("src.pipeline.run_query.run_prefilter", return_value=None),
+        patch(
+            "src.pipeline.run_query.retrieve_and_route_concurrent",
+            new=AsyncMock(return_value=WORST_CASE_RETRIEVAL_AND_ROUTING),
+        ),
+        patch("src.pipeline.run_query.rrf_fuse", return_value=WORST_CASE_FUSED),
+        patch(
+            "src.pipeline.run_query.apply_conditional_rerank",
+            new=AsyncMock(return_value=WORST_CASE_RERANKED),
+        ),
+        patch(
+            "src.pipeline.run_query.apply_tavily_fallback",
+            new=AsyncMock(return_value=WORST_CASE_TAVILY_RESULT),
+        ),
+        patch("src.api.main.generate_streaming", new=_fake_generate_streaming),
+    ):
+        response = client.post("/query", json={"query": "some query"})
 
     final = _parse_sse(response.text)[-1]
     expected_trace_id = final["trace_id"]
