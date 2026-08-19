@@ -69,8 +69,8 @@ def rerank(
     if not candidates:
         return []
 
-    # Limit compute pool to top 5 candidates to guarantee <400ms on CPU
-    pool = candidates[:5]
+    # Limit compute pool to top 10 candidates to guarantee <400ms on CPU
+    pool = candidates[:10]
     pairs = [(query, _candidate_text(c)) for c in pool]
 
     model = _get_reranker()

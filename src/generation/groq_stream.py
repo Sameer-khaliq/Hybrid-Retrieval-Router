@@ -115,13 +115,16 @@ def _model_for_path(path: Path) -> str:
     return settings.groq_fast_model if path == "fast" else settings.groq_deep_model
 
 
-async def _create_stream(model: str, query: str, context_block: str):
+async def _create_stream(model: str, query: str, context_block: str, max_tokens: int = 250):
     """The actual Groq call. Wrapped in with_retry by the caller - this
     function itself stays a plain zero-arg-callable-friendly coroutine,
     matching with_retry's expected signature (Step 11)."""
+    # Use max_tokens from settings if defined, else fallback to the passed default
+    tokens_limit = getattr(settings, "generation_max_tokens", max_tokens)
     return await _groq_client.chat.completions.create(
         model=model,
         temperature=0.2,
+        max_tokens=tokens_limit,
         stream=True,
         messages=[
             {"role": "system", "content": _GENERATION_SYSTEM_PROMPT},
@@ -164,6 +167,9 @@ async def generate_streaming(
     model = _model_for_path(path)
     degraded = False
 
+    # Dynamic token budgeting based on path (fast vs deep)
+    tokens_limit = 150 if path == "fast" else 250
+
     # Acquire the deep-model concurrency cap before the first attempt.
     # Held through retries; released early below if we fall back to the
     # fast model, and always released in the outer finally (including on
@@ -176,7 +182,7 @@ async def generate_streaming(
     try:
         try:
             stream = await with_retry(
-                lambda: _create_stream(model, query, context_block),
+                lambda: _create_stream(model, query, context_block, max_tokens=tokens_limit),
                 max_retries=settings.max_retries,
             )
         except RetriesExhaustedError as exc:
@@ -197,17 +203,10 @@ async def generate_streaming(
                 degraded = True
                 try:
                     stream = await with_retry(
-                        lambda: _create_stream(model, query, context_block),
+                        lambda: _create_stream(model, query, context_block, max_tokens=150),
                         max_retries=settings.max_retries,
                     )
                 except RetriesExhaustedError as exc2:
-                    # NFR-9 only specifies deep -> fast fallback. It doesn't
-                    # define a further tier for "fast-path model itself is
-                    # down" - there is no lower tier to fall back to. This
-                    # is a genuine gap in the requirements doc, not
-                    # something I'm inventing a default for silently: flag
-                    # it back to the caller as an explicit error sentinel
-                    # rather than picking an undocumented behavior.
                     logger.error(
                         "fast_model_also_unavailable_no_further_fallback",
                         stage="generation",
@@ -217,9 +216,6 @@ async def generate_streaming(
                     yield {"done": True, "model_used": model, "degraded": True}
                     return
             else:
-                # path == "fast" failing outright - same "no lower tier"
-                # gap as above, just reached directly instead of via a
-                # deep-path fallback attempt first.
                 logger.error(
                     "fast_model_unavailable_no_fallback",
                     stage="generation",
