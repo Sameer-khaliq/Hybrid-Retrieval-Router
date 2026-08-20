@@ -2,6 +2,8 @@ import asyncio
 import json
 from pathlib import Path
 
+import anyio
+
 from src.pipeline.run_query import run_query
 from src.retrieval.rerank import preload_reranker
 from src.retrieval.sparse_bm25 import get_or_build_index
@@ -22,8 +24,9 @@ async def test_all_demo_queries():
         print(f"File not found: {DEMO_FILE}")
         return
 
-    with open(DEMO_FILE, "r", encoding="utf-8") as f:
-        queries = [json.loads(line) for line in f if line.strip()]
+    demo_path = anyio.Path(DEMO_FILE)
+    lines = (await demo_path.read_text(encoding="utf-8")).splitlines()
+    queries = [json.loads(line) for line in lines if line.strip()]
 
     print(f"\n{'='*75}")
     print(f"Running Step 26 Rehearsal on {len(queries)} Demo Queries")
