@@ -227,7 +227,6 @@ def check_out_of_scope(query: str) -> dict | None:
 # ---------------------------------------------------------------------------
 
 from functools import lru_cache
-from typing import Any
 
 import numpy as np
 
