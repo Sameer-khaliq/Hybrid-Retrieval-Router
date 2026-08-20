@@ -1,4 +1,5 @@
 import json
+
 import httpx
 
 url = "http://localhost:8000/query"
