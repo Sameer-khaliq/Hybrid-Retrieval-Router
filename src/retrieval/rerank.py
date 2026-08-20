@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import queue
+import threading
 import time
 from typing import Any
 
@@ -111,7 +113,31 @@ def rerank(
     return result
 
 
-_rerank_semaphore = asyncio.Semaphore(1)
+_rerank_queue: queue.Queue = queue.Queue()
+_worker_started = False
+
+
+def _rerank_worker() -> None:
+    while True:
+        func, args, result_future, loop = _rerank_queue.get()
+        try:
+            result = func(*args)
+            if not result_future.cancelled():
+                loop.call_soon_threadsafe(result_future.set_result, result)
+        except Exception as e:
+            if not result_future.cancelled():
+                loop.call_soon_threadsafe(result_future.set_exception, e)
+        finally:
+            _rerank_queue.task_done()
+
+
+def _ensure_worker() -> None:
+    global _worker_started
+    if not _worker_started:
+        thread = threading.Thread(target=_rerank_worker, daemon=True, name="RerankWorker")
+        thread.start()
+        _worker_started = True
+
 
 async def rerank_async(
     query: str,
@@ -119,17 +145,19 @@ async def rerank_async(
     top_k: int | None = None,
     trace_id: str = "rerank",
 ) -> list[dict[str, Any]]:
-    async with _rerank_semaphore:
-        try:
-            return await asyncio.wait_for(
-                asyncio.to_thread(rerank, query, candidates, top_k, trace_id),
-                timeout=2.5,
-            )
-        except asyncio.TimeoutError:
-            logger = get_logger(trace_id=trace_id)
-            logger.warning(
-                    "rerank_timeout_fallback",
-                    stage="rerank",
-                    detail="Exceeded timeout cap, skipping rerank",
-                )
-            return candidates[:top_k] if top_k is not None else candidates
+    _ensure_worker()
+    loop = asyncio.get_running_loop()
+    result_future: asyncio.Future = loop.create_future()
+
+    _rerank_queue.put((rerank, (query, candidates, top_k, trace_id), result_future, loop))
+
+    try:
+        return await asyncio.wait_for(result_future, timeout=settings.rerank_timeout_s)
+    except TimeoutError:
+        logger = get_logger(trace_id=trace_id)
+        logger.warning(
+            "rerank_timeout_fallback",
+            stage="rerank",
+            detail="Exceeded timeout cap, skipping rerank",
+        )
+        return candidates[:top_k] if top_k is not None else candidates
