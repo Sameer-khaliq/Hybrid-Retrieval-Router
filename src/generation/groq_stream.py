@@ -36,6 +36,30 @@ _groq_deep_semaphore = asyncio.Semaphore(settings.groq_deep_max_concurrency)
 
 Path = Literal["fast", "deep"]
 
+# All Groq models currently wired into this system (gpt-oss-20b,
+# gpt-oss-120b) are reasoning models: they emit a separate
+# reasoning/analysis channel (event.choices[0].delta.reasoning) before
+# ever touching event.choices[0].delta.content. If reasoning is left
+# unconstrained and the token budget is too small, the model can burn
+# its entire max_completion_tokens on reasoning and never reach the
+# content channel at all - producing a "successful" 200 response with
+# an empty answer. Two knobs fix this per Groq's reasoning-models API:
+#   - reasoning_effort: "low"/"medium"/"high" for gpt-oss models,
+#     "none"/"default" for Qwen models (disables reasoning entirely).
+#   - max_completion_tokens: must be large enough to cover reasoning
+#     AND the final answer, not just the answer alone.
+# Keyed by the actual Groq model id string so this stays correct
+# regardless of which path (fast/deep) a given model is assigned to.
+_REASONING_PARAMS_BY_MODEL: dict[str, dict[str, Any]] = {
+    "openai/gpt-oss-20b": {"reasoning_effort": "low", "max_completion_tokens": 1200},
+    "openai/gpt-oss-120b": {"reasoning_effort": "low", "max_completion_tokens": 1800},
+    "qwen/qwen3.6-27b": {"reasoning_effort": "none", "max_completion_tokens": 1000},
+}
+# Fallback for any model not in the table above (e.g. a future swap) -
+# conservative defaults so we don't silently reintroduce the empty-
+# answer bug for an unrecognized model id.
+_DEFAULT_REASONING_PARAMS: dict[str, Any] = {"max_completion_tokens": 1200}
+
 _GENERATION_SYSTEM_PROMPT = (
     "You are a helpful assistant answering questions using ONLY the "
     "provided context. If the context doesn't contain enough "
@@ -64,20 +88,33 @@ def _model_for_path(path: Path) -> str:
     return settings.groq_fast_model if path == "fast" else settings.groq_deep_model
 
 
-async def _create_stream(model: str, query: str, context_block: str, max_tokens: int = 250):
+async def _create_stream(model: str, query: str, context_block: str):
     """The actual Groq call. Wrapped in with_retry by the caller - this
     function itself stays a plain zero-arg-callable-friendly coroutine,
-    matching with_retry's expected signature (Step 11)."""
-    tokens_limit = getattr(settings, "generation_max_tokens", max_tokens)
+    matching with_retry's expected signature (Step 11).
+
+    Pulls reasoning_effort + max_completion_tokens from
+    _REASONING_PARAMS_BY_MODEL so reasoning models get enough budget to
+    reason AND answer, not just answer (see comment above the table).
+    An explicit settings.generation_max_tokens, if set, overrides the
+    per-model token budget - it does not touch reasoning_effort.
+    """
+    reasoning_params = dict(
+        _REASONING_PARAMS_BY_MODEL.get(model, _DEFAULT_REASONING_PARAMS)
+    )
+    override_tokens = getattr(settings, "generation_max_tokens", None)
+    if override_tokens:
+        reasoning_params["max_completion_tokens"] = override_tokens
+
     return await _groq_client.chat.completions.create(
         model=model,
         temperature=0.2,
-        max_tokens=tokens_limit,
         stream=True,
         messages=[
             {"role": "system", "content": _GENERATION_SYSTEM_PROMPT},
             {"role": "user", "content": f"Context:\n{context_block}\n\nQuestion: {query}"},
         ],
+        **reasoning_params,
     )
 
 
@@ -115,9 +152,6 @@ async def generate_streaming(
     model = _model_for_path(path)
     degraded = False
 
-    # Dynamic token budgeting based on path (fast vs deep)
-    tokens_limit = 200 if path == "fast" else 250
-
     # Acquire the deep-model concurrency cap before the first attempt.
     holding_deep_semaphore = False
     if model == settings.groq_deep_model:
@@ -127,7 +161,7 @@ async def generate_streaming(
     try:
         try:
             stream = await with_retry(
-                lambda: _create_stream(model, query, context_block, max_tokens=tokens_limit),
+                lambda: _create_stream(model, query, context_block),
                 max_retries=settings.max_retries,
             )
         except RetriesExhaustedError as exc:
@@ -145,7 +179,7 @@ async def generate_streaming(
                 degraded = True
                 try:
                     stream = await with_retry(
-                        lambda: _create_stream(model, query, context_block, max_tokens=150),
+                        lambda: _create_stream(model, query, context_block),
                         max_retries=settings.max_retries,
                     )
                 except RetriesExhaustedError as exc2:
@@ -167,10 +201,34 @@ async def generate_streaming(
                 yield {"done": True, "model_used": model, "degraded": True}
                 return
 
+        content_received = False
         async for event in stream:
             delta = event.choices[0].delta.content
             if delta:
+                content_received = True
                 yield {"delta": delta}
+
+        if not content_received:
+            # Belt-and-suspenders: even with reasoning_effort tuned and a
+            # larger token budget (see _REASONING_PARAMS_BY_MODEL), a
+            # reasoning model can in principle still exhaust its budget
+            # mid-reasoning on an unusually complex query. Surface that
+            # plainly rather than returning a silent empty answer.
+            logger.warning(
+                "generation_empty_content",
+                stage="generation",
+                model_used=model,
+                note="model produced no content tokens - likely exhausted "
+                "its token budget during reasoning before reaching the "
+                "final-answer channel",
+            )
+            yield {
+                "error": "The model ran out of budget while reasoning and "
+                "didn't produce an answer. Please try again.",
+                "degraded": True,
+            }
+            yield {"done": True, "model_used": model, "degraded": True}
+            return
 
         logger.info(
             "generation_complete",
