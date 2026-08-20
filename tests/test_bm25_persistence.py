@@ -8,6 +8,7 @@ Covers Step 8's three-part verify:
 import asyncio
 import shutil
 
+import numpy as np
 import pytest
 
 from src.retrieval import sparse_bm25
@@ -51,7 +52,14 @@ def test_save_and_load_roundtrip(sample_chunks):
     docs_orig = retriever.retrieve(query_tokens_orig, k=3)
     docs_loaded = loaded_retriever.retrieve(query_tokens_loaded, k=3)
 
-    assert list(docs_orig[0]) == list(docs_loaded[0])
+    # Use NumPy testing to compare ndarrays safely
+    if isinstance(docs_orig, tuple):
+        np.testing.assert_array_equal(docs_orig[0], docs_loaded[0])
+        np.testing.assert_allclose(docs_orig[1], docs_loaded[1], rtol=1e-5)
+    elif hasattr(docs_orig, "documents"):
+        np.testing.assert_array_equal(docs_orig.documents[0], docs_loaded.documents[0])
+    else:
+        np.testing.assert_array_equal(np.asarray(docs_orig[0]), np.asarray(docs_loaded[0]))
 
 
 def test_get_or_build_index_loads_from_disk_when_present(sample_chunks):
