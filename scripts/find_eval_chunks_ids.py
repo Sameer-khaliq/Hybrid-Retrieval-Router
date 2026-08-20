@@ -63,7 +63,7 @@ def get_payload_text(qdrant_client, collection: str, chunk_id) -> str:
                 if key in payload:
                     return str(payload[key])[:300]
             return str(payload)[:300]
-    except Exception as e:
+    except Exception as e: # noqa: BLE001
         return f"<payload fetch failed: {e}>"
     return "<no payload found>"
 
