@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Atlas | Hybrid Retrieval</title>
+  <title>Hybrid Retrieval Router</title>
   <!-- Tailwind CSS is compiled locally for production use. -->
   <link rel="stylesheet" href="./dist/tailwind.css">
   <!-- Lucide Icons via CDN -->
@@ -216,6 +216,72 @@
       background: #aab9c2;
     }
 
+    .sample-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: .6rem;
+    }
+
+    @media (max-width: 640px) {
+      .sample-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .sample-card {
+      background: white;
+      border: 1px solid var(--line);
+      color: var(--ink);
+      text-align: left;
+      border-radius: 14px;
+      padding: .7rem .9rem;
+      transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+      cursor: pointer;
+    }
+
+    .sample-card:hover {
+      border-color: var(--blue);
+      box-shadow: 0 8px 20px rgba(23, 105, 170, .1);
+      transform: translateY(-1px);
+    }
+
+    .sample-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: .3rem;
+      font-family: 'Space Mono', monospace;
+      font-size: 9px;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .sample-tag.tag-greeting {
+      color: #71808d;
+    }
+
+    .sample-tag.tag-simple {
+      color: var(--blue);
+    }
+
+    .sample-tag.tag-deep {
+      color: var(--orange);
+    }
+
+    .sample-tag .dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 999px;
+      background: currentColor;
+    }
+
+    .sample-text {
+      margin-top: .3rem;
+      font-size: .8rem;
+      line-height: 1.25rem;
+      color: #3a4650;
+    }
+
     .cursor-blink {
       display: inline-block;
       width: 6px;
@@ -281,7 +347,7 @@
       <span class="brand-mark flex h-9 w-9 items-center justify-center rounded-xl"><i data-lucide="orbit"
           class="h-4 w-4"></i></span>
       <div>
-        <div class="text-sm font-bold tracking-tight">Atlas Retrieval</div>
+        <div class="text-sm font-bold tracking-tight">Hybrid Retrieval Router</div>
         <div class="font-mono text-[10px] uppercase tracking-[.18em] text-slate-400">hybrid knowledge console</div>
       </div>
     </div>
@@ -332,13 +398,34 @@
   </div>
 
   <!-- Messages Scroll Area -->
-  <main id="chatContainer" class="workspace flex-1 overflow-y-auto px-5 py-10 md:px-10 select-text">
-    <div id="emptyState" class="flex min-h-full flex-col items-center justify-center gap-3 py-4 text-center">
-      <div class="empty-kicker font-mono text-[10px] uppercase tracking-[.25em]">Your research desk</div>
+  <main id="chatContainer" class="workspace min-h-0 flex-1 overflow-y-auto px-5 py-8 md:px-10 select-text">
+    <div id="emptyState" class="flex h-full min-h-0 flex-col items-center justify-center gap-3 py-4 text-center">
       <div class="empty-title text-3xl font-bold tracking-tight md:text-5xl">Ask the corpus<br><span
           class="text-orange-500">better questions.</span></div>
       <div class="empty-copy max-w-md text-sm leading-6">Search across your indexed knowledge base with a route that
         adapts to the shape of every question.</div>
+
+      <div class="sample-grid mt-7 w-full max-w-2xl" id="sampleQueries">
+        <button type="button" class="sample-card" data-query="Hi, what can you help me with?">
+          <span class="sample-tag tag-greeting"><span class="dot"></span>Greeting</span>
+          <div class="sample-text">Hi, what can you help me with?</div>
+        </button>
+        <button type="button" class="sample-card" data-query="What is a P/E ratio?">
+          <span class="sample-tag tag-simple"><span class="dot"></span>Simple &middot; fast path</span>
+          <div class="sample-text">What is a P/E ratio?</div>
+        </button>
+        <button type="button" class="sample-card"
+          data-query="What's the difference between a Roth IRA and a Traditional IRA?">
+          <span class="sample-tag tag-simple"><span class="dot"></span>Simple &middot; fast path</span>
+          <div class="sample-text">What's the difference between a Roth IRA and a Traditional IRA?</div>
+        </button>
+        <button type="button" class="sample-card"
+          data-query="Compare the tax efficiency of dividend reinvestment versus selling appreciated stock for a long-term investor in a taxable account, and explain the trade-offs.">
+          <span class="sample-tag tag-deep"><span class="dot"></span>Deep &middot; multi-hop</span>
+          <div class="sample-text">Compare the tax efficiency of dividend reinvestment vs. selling appreciated stock for
+            a long-term investor, and explain the trade-offs.</div>
+        </button>
+      </div>
     </div>
     <div id="messagesList" class="mx-auto flex max-w-4xl flex-col gap-5 hidden">
       <!-- Chat bubbles will be inserted here -->
@@ -433,6 +520,17 @@
           activeChip = chipKey;
           btn.classList.add('active');
         }
+      });
+    });
+
+    // Sample query card click handlers (empty-state suggestions)
+    document.querySelectorAll('.sample-card').forEach(card => {
+      card.addEventListener('click', () => {
+        if (busy) return;
+        const q = card.getAttribute('data-query');
+        queryInput.value = q;
+        queryInput.dispatchEvent(new Event('input'));
+        handleSubmit();
       });
     });
 
@@ -601,7 +699,7 @@
           <i data-lucide="loader-2" class="h-3.5 w-3.5 animate-spin"></i>
           <span id="thinking-label-${assistantId}">Mulling...</span>
         </div>
-        <div class="answer-head mb-3 font-mono text-[10px] uppercase tracking-[.18em]">Atlas answer</div>
+        <div class="answer-head mb-3 font-mono text-[10px] uppercase tracking-[.18em]">Router answer</div>
         <div id="content-${assistantId}" class="content hidden"></div>
         <div class="mt-4 flex justify-end"><button id="copy-answer-${assistantId}" class="copy-button rounded-lg px-2 py-1.5" aria-label="Copy answer"><i data-lucide="copy" class="h-3.5 w-3.5"></i><span class="ml-1 font-mono text-[10px]">copy answer</span></button></div>
         <div id="sources-${assistantId}" class="mt-4 hidden flex-wrap gap-1.5 border-t pt-3 message-divider"></div>
