@@ -24,9 +24,10 @@ import inspect
 import json
 import sys
 from pathlib import Path
-from src.retrieval.sparse_bm25 import get_or_build_index, query_bm25
-from src.retrieval.dense_qdrant import query_dense
+
 from src.common.qdrant_client import get_client
+from src.retrieval.dense_qdrant import query_dense
+from src.retrieval.sparse_bm25 import get_or_build_index, query_bm25
 
 
 def load_eval_set(path: Path) -> list[dict]:
@@ -157,8 +158,7 @@ def main():
 
     if args.out:
         with open(args.out, "w", encoding="utf-8") as f:
-            for d in dump:
-                f.write(json.dumps(d) + "\n")
+            f.writelines(json.dumps(d) + "\n" for d in dump)
         print(f"\nWrote full candidate dump to {args.out}")
 
     print(
