@@ -7,8 +7,10 @@ query = "hi"
 
 print(f"\n[Query]: {query}\n[Answer]: ", end="", flush=True)
 
-with httpx.Client(timeout=30.0) as client:
-    with client.stream("POST", url, json={"query": query}) as response:
+with (
+        httpx.Client(timeout=30.0) as client,
+        client.stream("POST", url, json={"query": query}) as response,
+    ):
         for line in response.iter_lines():
             if line:
                 data = json.loads(line)
