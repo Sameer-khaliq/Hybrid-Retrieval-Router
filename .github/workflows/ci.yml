@@ -65,7 +65,7 @@ jobs:
         # excluded here on purpose (see NOTES.md / Step 1 addendum). Every
         # other test, including Qdrant-integration tests, runs for real
         # against the service container above.
-        run: uv run pytest -v -m "not live_api" --maxfail=1
+        run: uv run pytest tests/ -v -m "not live_api"
 
       - name: Upload eval report (if produced)
         if: always()
