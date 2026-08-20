@@ -12,43 +12,6 @@ are exhausted, fall back to the fast-path model rather than erroring,
 flagging degraded:true. Same default applies to Layer-1's malformed
 router response (already handled in layer1_llm.py) - this is the
 generation-side half of that shared policy.
-
-DESIGN NOTE - why fallback happens at stream-creation, not mid-stream:
-the retry/fallback logic wraps only the `.create(..., stream=True)`
-call itself, not the token-by-token consumption after it. Groq's
-client raises on the create() call for auth/rate-limit/5xx errors
-before any tokens are delivered - that's the natural retry boundary.
-Retrying or falling back MID-stream (after some tokens have already
-reached the client) isn't attempted: there's no clean way to "retry" a
-partially-delivered stream without either duplicating already-sent
-tokens or confusing the client with a truncated-then-restarted answer.
-This also means no separate "probe" call is needed before streaming -
-the real generation call IS the reachability check, so NFR-4's
-per-query API-call budget isn't spent on a call that does nothing but
-check if another call would work.
-
-CONCURRENCY CAP (429 fix, part 1): once the reranker's event-loop-
-blocking bug (rerank.py) is fixed, deep-path requests are no longer
-artificially serialized by a starved event loop, so they can
-genuinely fire concurrently. _groq_deep_semaphore below caps
-concurrent in-flight groq_deep_model calls to
-settings.groq_deep_max_concurrency as a safety net. Only the deep
-model is capped - fast-path (which shares gpt-oss-20b with the
-Layer-1 router) hasn't shown 429s and isn't capped here.
-
-CONTEXT-SIZE CAP (429 fix, part 2 - the actual root cause): Groq's
-free-tier TPM ceiling for both gpt-oss-120b and gpt-oss-20b is 8K
-tokens/minute. A full 15-chunk deep-path prompt runs ~4-6K tokens on
-its own, so 1-2 back-to-back deep-path requests exhaust the per-minute
-budget regardless of concurrency - the semaphore above limits how many
-requests are in flight at once, but does nothing about how large each
-one is. _build_context_block() below caps the number of chunks it puts
-in the prompt (settings.generation_max_context_chunks) and truncates
-each chunk's text (settings.generation_max_chunk_chars). This is
-generation-context-only: the reranker still scores and returns the
-full settings.rerank_top_k (15) candidates for deep-path, so NFR-5
-(Recall@10) is unaffected - only what actually gets sent to Groq
-shrinks.
 """
 
 from __future__ import annotations
@@ -85,9 +48,8 @@ _GENERATION_SYSTEM_PROMPT = (
 )
 
 
-def _build_context_block(chunks: list[dict[str, Any]]) -> str:
-    
-    limited_chunks = chunks[: settings.generation_max_context_chunks]
+def _build_context_block(chunks: list[dict[str, Any]], max_chunks: int) -> str:
+    limited_chunks = chunks[:max_chunks]
     lines = []
     for i, chunk in enumerate(limited_chunks, start=1):
         payload = chunk.get("payload") or {}
@@ -106,7 +68,6 @@ async def _create_stream(model: str, query: str, context_block: str, max_tokens:
     """The actual Groq call. Wrapped in with_retry by the caller - this
     function itself stays a plain zero-arg-callable-friendly coroutine,
     matching with_retry's expected signature (Step 11)."""
-    # Use max_tokens from settings if defined, else fallback to the passed default
     tokens_limit = getattr(settings, "generation_max_tokens", max_tokens)
     return await _groq_client.chat.completions.create(
         model=model,
@@ -133,24 +94,24 @@ async def generate_streaming(
         {"delta": str}                                  - one per token
         ... (repeated)
         {"done": True, "model_used": str, "degraded": bool}   - final
-
-    On total failure (fast-path model also exhausted after a deep-path
-    fallback, or fast-path itself failing outright with no path was
-    ever "deep" to fall back from) - see the docstring note below on
-    NFR-9's stated scope. This yields an {"error": ...} sentinel before
-    the final {"done": ...} rather than raising, so Step 23's API layer
-    always has something to build an HTTP response from (never an
-    uncaught exception reaching the client).
     """
     logger = get_logger(trace_id=trace_id)
-    if len(chunks) > settings.generation_max_context_chunks:
+
+    max_chunks = (
+        getattr(settings, "generation_max_context_chunks_deep", 10)
+        if path == "deep"
+        else getattr(settings, "generation_max_context_chunks_fast", 5)
+    )
+
+    if len(chunks) > max_chunks:
         logger.info(
             "generation_context_truncated",
             stage="generation",
             retrieved_chunks=len(chunks),
-            chunks_sent_to_llm=settings.generation_max_context_chunks,
+            chunks_sent_to_llm=max_chunks,
         )
-    context_block = _build_context_block(chunks)
+
+    context_block = _build_context_block(chunks, max_chunks=max_chunks)
     model = _model_for_path(path)
     degraded = False
 
@@ -158,9 +119,6 @@ async def generate_streaming(
     tokens_limit = 200 if path == "fast" else 250
 
     # Acquire the deep-model concurrency cap before the first attempt.
-    # Held through retries; released early below if we fall back to the
-    # fast model, and always released in the outer finally (including on
-    # early generator close, e.g. client disconnect mid-stream).
     holding_deep_semaphore = False
     if model == settings.groq_deep_model:
         await _groq_deep_semaphore.acquire()
@@ -181,9 +139,6 @@ async def generate_streaming(
                     error=str(exc),
                 )
                 if holding_deep_semaphore:
-                    # Falling back to the fast model - release the deep
-                    # slot now rather than holding it for the duration
-                    # of a call that no longer touches the deep model.
                     _groq_deep_semaphore.release()
                     holding_deep_semaphore = False
                 model = settings.groq_fast_model
@@ -234,10 +189,5 @@ async def generate_atomic(text: str, trace_id: str = "gated_response") -> dict:
     FR-26's explicit carve-out: gated responses (Step 14's FR-21-24
     matches) bypass this module's streaming path entirely and return as
     ONE atomic, non-streamed response - never token-by-token.
-
-    Exists so Step 23's API layer has one consistent response shape to
-    build from regardless of whether the query was gated or went
-    through full generation - the HTTP layer shouldn't need two
-    different response-construction code paths.
     """
     return {"answer": text, "streamed": False, "degraded": False}
