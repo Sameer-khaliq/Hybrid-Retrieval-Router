@@ -437,7 +437,7 @@ def check_semantic_gating(query: str) -> dict | None:
         # If sentence-transformers is unavailable, preserve the original
         # regex-only behavior rather than breaking the retrieval pipeline.
         return None
-    except Exception:
+    except Exception:   # noqa: BLE001
         # A semantic fallback must never become a single point of failure for
         # retrieval. Production deployments should log the exception details
         # through the project's error-monitoring system.
