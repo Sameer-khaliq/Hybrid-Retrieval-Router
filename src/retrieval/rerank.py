@@ -30,7 +30,7 @@ def _get_reranker() -> CrossEncoder:
             device="cpu",
             local_files_only=True,
         )
-    except Exception:
+    except (OSError, RuntimeError):
         _reranker = CrossEncoder(
             settings.reranker_model,
             max_length=256,
@@ -47,12 +47,13 @@ def _get_reranker() -> CrossEncoder:
 
 def preload_reranker() -> None:
     """Eager load and warmup."""
+    logger = get_logger(trace_id="rerank")
     model = _get_reranker()
     try:
         with torch.inference_mode():
             model.predict([("warmup query", "warmup text")], show_progress_bar=False)
-    except Exception:
-        pass
+    except Exception as e: #noqa: BLE001
+        logger.debug("reranker_warmup_failed", error=str(e))
 
 def _candidate_text(candidate: dict[str, Any]) -> str:
     payload = candidate.get("payload") or {}
@@ -88,7 +89,7 @@ def rerank(
                 show_progress_bar=False,
                 convert_to_numpy=True,
             )
-    except Exception as e:
+    except (RuntimeError, ValueError, TypeError) as e:
         logger.warning("rerank_inference_failed", stage="rerank", error=str(e))
         # Graceful fallback: return un-reranked pool
         return pool[:top_k] if top_k is not None else pool
@@ -124,9 +125,9 @@ def _rerank_worker() -> None:
             result = func(*args)
             if not result_future.cancelled():
                 loop.call_soon_threadsafe(result_future.set_result, result)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             if not result_future.cancelled():
-                loop.call_soon_threadsafe(result_future.set_exception, e)
+                loop.call_soon_threadsafe(result_future.set_exception, e)   
         finally:
             _rerank_queue.task_done()
 
