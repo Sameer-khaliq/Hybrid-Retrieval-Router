@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     groq_router_model: str = Field(default="openai/gpt-oss-20b")
 
     groq_fast_model: str = Field(default="openai/gpt-oss-20b")
-    groq_deep_model: str = Field(default="openai/gpt-oss-120b")
+    groq_deep_model: str = Field(default="openai/gpt-oss-20b")
     groq_mid_model_a: str = Field(default="qwen/qwen3.6-27b")
     groq_mid_model_b: str = Field(default="")
 
